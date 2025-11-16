@@ -72,6 +72,43 @@ object MyApp extends ZIOAppDefault:
     )
 ```
 
+### Reference Examples
+
+We ported the original EclipseStore “getting started” and “embedded storage basics” walkthroughs to ZIO:
+
+| Example | Main Class | Highlights |
+| --- | --- | --- |
+| Getting Started | `io.github.riccardomerolla.zio.eclipsestore.examples.gettingstarted.GettingStartedApp` | Simple put/get/batch usage |
+| Embedded Storage Basics | `io.github.riccardomerolla.zio.eclipsestore.examples.gettingstarted.EmbeddedStorageBasicsApp` | Typed roots and maintenance lifecycle |
+
+Run them with `sbt "runMain full.qualified.ClassName"`.
+
+### Bookstore Backend Demo
+
+The `BookstoreServer` example reimplements the backend portion of EclipseStore’s [Bookstore demo](https://github.com/eclipse-store/bookstore-demo) using:
+
+- `zio-eclipsestore` for persistence and typed roots
+- `zio-http` for the REST API
+- `zio-json` codecs for request/response bodies
+
+Main entry point: `io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.BookstoreServer`
+
+```
+sbt bookstore/run
+```
+
+Default port: `8080`. Available routes:
+
+| Method & Path | Description |
+| --- | --- |
+| `GET /books` | List all books |
+| `POST /books` | Create a book (`CreateBookRequest`) |
+| `GET /books/{id}` | Fetch a single book |
+| `PUT /books/{id}` | Update mutable fields (`UpdateBookRequest`) |
+| `DELETE /books/{id}` | Remove a book and persist the root |
+
+All write operations automatically persist the `BookstoreRoot` and you can trigger checkpoints/backups via `EclipseStoreService` if desired.
+
 ### Configuration
 
 Configure your EclipseStore instance:

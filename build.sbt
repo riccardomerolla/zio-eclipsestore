@@ -56,8 +56,11 @@ lazy val bookstore = (project in file("examples/bookstore"))
     libraryDependencies ++= Seq(
       "dev.zio" %% "zio" % zioVersion,
       "dev.zio" %% "zio-http" % zioHttpVersion,
-      "dev.zio" %% "zio-json" % zioJsonVersion
+      "dev.zio" %% "zio-json" % zioJsonVersion,
+      "dev.zio" %% "zio-test" % zioVersion % Test,
+      "dev.zio" %% "zio-test-sbt" % zioVersion % Test
     ),
-    Compile / run / mainClass := Some("io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.BookstoreServer")
+    Compile / run / mainClass := Some("io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.BookstoreServer"),
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
   )
   .dependsOn(root)

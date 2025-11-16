@@ -17,8 +17,8 @@ object GigaMapSpec extends ZIOSpecDefault:
     GigaMapDefinition[Int, Account](
       name = "accounts",
       indexes = Chunk(
-        GigaMapIndex("city", _.city),
-        GigaMapIndex("status", _.status),
+        GigaMapIndex.single("city", _.city),
+        GigaMapIndex.single("status", _.status),
       ),
       autoPersist = false,
     )

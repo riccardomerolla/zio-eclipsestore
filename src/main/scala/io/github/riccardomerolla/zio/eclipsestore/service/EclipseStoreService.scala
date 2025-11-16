@@ -85,14 +85,14 @@ final case class EclipseStoreServiceLive(
     config: EclipseStoreConfig,
     storageManager: EmbeddedStorageManager,
     rootContainer: RootContainer,
-    storer: Storer,
-    persister: Persister,
+    storer: Option[Storer],
+    persister: Option[Persister],
     statusRef: Ref[LifecycleStatus],
     configuredDescriptors: Chunk[RootDescriptor[?]],
     keyValueDescriptor: RootDescriptor[ConcurrentHashMap[Any, Any]],
     startedAt: Instant = Instant.now(),
   ) extends EclipseStoreService:
-  private val rootContext = RootContext(rootContainer, Some(storageManager), Some(storer), Some(persister))
+  private val rootContext = RootContext(rootContainer, Some(storageManager), storer, persister)
 
   private def kvStore: ConcurrentHashMap[Any, Any] =
     rootContainer.ensure(keyValueDescriptor)
@@ -391,15 +391,8 @@ object EclipseStoreService:
         _                 <- ZIO
                                .attempt(storageManager.start())
                                .mapError(e => EclipseStoreError.InitializationError("Failed to start storage manager", Some(e)))
-        storer            <-
-          ZIO
-            .attempt(storageManager.asInstanceOf[Storer])
-            .mapError(e => EclipseStoreError.InitializationError("Storage manager does not expose Storer API", Some(e)))
-        persister         <- ZIO
-                               .attempt(storageManager.asInstanceOf[Persister])
-                               .mapError(e =>
-                                 EclipseStoreError.InitializationError("Storage manager does not expose Persister API", Some(e))
-                               )
+        storer             = Option(storageManager).collect { case s: Storer => s }
+        persister          = Option(storageManager).collect { case p: Persister => p }
         rootContainer     <- ZIO
                                .attempt {
                                  storageManager.root() match

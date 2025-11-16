@@ -62,6 +62,21 @@ lazy val gigamap = (project in file("gigamap"))
   )
   .dependsOn(root)
 
+lazy val gigamapCli = (project in file("examples/gigamap-cli"))
+  .settings(
+    name := "zio-eclipsestore-gigamap-cli",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      "dev.zio" %% "zio-cli" % "0.7.4",
+      "dev.zio" %% "zio-json" % zioJsonVersion,
+      "dev.zio" %% "zio-test" % zioVersion % Test,
+      "dev.zio" %% "zio-test-sbt" % zioVersion % Test
+    ),
+    Compile / run / mainClass := Some("io.github.riccardomerolla.zio.eclipsestore.examples.gigamap.ReplApp"),
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
+  )
+  .dependsOn(gigamap)
+
 lazy val bookstore = (project in file("examples/bookstore"))
   .settings(
     name := "zio-eclipsestore-bookstore",

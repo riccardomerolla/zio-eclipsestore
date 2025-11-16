@@ -134,13 +134,15 @@ final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[
         val state =
           indexState.computeIfAbsent(name, _ => new ConcurrentHashMap[Any, KeySetView[Any, java.lang.Boolean]]())
         oldValue.foreach { value =>
-          val field = index.extract(value)
-          Option(state.get(field)).foreach(_.remove(key))
+          index.extract(value).foreach { field =>
+            Option(state.get(field)).foreach(_.remove(key))
+          }
         }
         newValue.foreach { value =>
-          val field  = index.extract(value)
-          val bucket = state.computeIfAbsent(field, _ => ConcurrentHashMap.newKeySet[Any]())
-          bucket.add(key)
+          index.extract(value).foreach { field =>
+            val bucket = state.computeIfAbsent(field, _ => ConcurrentHashMap.newKeySet[Any]())
+            bucket.add(key)
+          }
         }
       }
     }

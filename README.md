@@ -124,6 +124,27 @@ sbt gigamap/test
 
 You can create a map layer via `GigaMap.make(definition)` and inject it in your ZIO apps.
 
+#### GigaMap Bookstore REPL (zio-cli)
+
+A companion CLI (`gigamapCli` project) ports the original EclipseStore GigaMap bookstore REPL using `zio-cli` 0.7.4. It lets you insert, list, query, and delete books backed by an in-memory GigaMap.
+
+```
+sbt "gigamapCli/run list"
+sbt "gigamapCli/run insert 1;Example Title;Author0,Author1;2024"
+sbt "gigamapCli/run findByAuthor Author0"
+```
+
+Commands:
+
+| Command | Description |
+| --- | --- |
+| `list` | Show all stored books |
+| `insert <payload>` | Adds a book with payload `id;title;author1,author2;year` |
+| `findByTitle <title>` | Query by title index |
+| `findByAuthor <author>` | Query by author index |
+| `delete <id>` | Remove a book |
+| `count` | Display total number of books |
+
 ### Configuration
 
 Configure your EclipseStore instance:

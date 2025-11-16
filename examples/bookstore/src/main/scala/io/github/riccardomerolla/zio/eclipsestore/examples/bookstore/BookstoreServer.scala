@@ -1,13 +1,14 @@
 package io.github.riccardomerolla.zio.eclipsestore.examples.bookstore
 
-import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
-import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.http.BookRoutes
-import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.BookRepository
-import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 import zio.*
 import zio.http.Server
 
 import java.nio.file.Paths
+
+import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
+import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.http.BookRoutes
+import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.BookRepository
+import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
 object BookstoreServer extends ZIOAppDefault:
 
@@ -26,5 +27,5 @@ object BookstoreServer extends ZIOAppDefault:
       .serve(BookRoutes.routes)
       .provide(
         serverLayer,
-        repositoryLayer
+        repositoryLayer,
       )

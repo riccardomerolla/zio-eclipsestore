@@ -1,10 +1,11 @@
 package io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service
 
-import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.*
-import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 import zio.*
 
 import java.util.UUID
+
+import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.*
+import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 import scala.jdk.CollectionConverters.*
 
 enum BookRepositoryError:
@@ -29,28 +30,28 @@ final case class BookRepositoryLive(store: EclipseStoreService) extends BookRepo
   override def create(payload: CreateBookRequest): IO[BookRepositoryError, Book] =
     for
       root <- withRoot
-      id = BookId(UUID.randomUUID())
-      book = Book(id, payload.title, payload.author, payload.price, payload.tags)
-      _ <- ZIO.succeed(root.storage.put(id.value, book))
-      _ <- persist(root)
+      id    = BookId(UUID.randomUUID())
+      book  = Book(id, payload.title, payload.author, payload.price, payload.tags)
+      _    <- ZIO.succeed(root.storage.put(id.value, book))
+      _    <- persist(root)
     yield book
 
   override def update(id: BookId, payload: UpdateBookRequest): IO[BookRepositoryError, Book] =
     for
-      root <- withRoot
+      root    <- withRoot
       updated <- Option(root.storage.get(id.value)) match
-        case Some(existing) =>
-          val recalculated = existing.copy(
-            title = payload.title.getOrElse(existing.title),
-            author = payload.author.getOrElse(existing.author),
-            price = payload.price.getOrElse(existing.price),
-            tags = payload.tags.getOrElse(existing.tags)
-          )
-          root.storage.put(id.value, recalculated)
-          ZIO.succeed(recalculated)
-        case None =>
-          ZIO.fail(BookRepositoryError.NotFound(id))
-      _ <- persist(root)
+                   case Some(existing) =>
+                     val recalculated = existing.copy(
+                       title = payload.title.getOrElse(existing.title),
+                       author = payload.author.getOrElse(existing.author),
+                       price = payload.price.getOrElse(existing.price),
+                       tags = payload.tags.getOrElse(existing.tags),
+                     )
+                     root.storage.put(id.value, recalculated)
+                     ZIO.succeed(recalculated)
+                   case None           =>
+                     ZIO.fail(BookRepositoryError.NotFound(id))
+      _       <- persist(root)
     yield updated
 
   override def get(id: BookId): IO[BookRepositoryError, Option[Book]] =
@@ -59,9 +60,9 @@ final case class BookRepositoryLive(store: EclipseStoreService) extends BookRepo
   override def delete(id: BookId): IO[BookRepositoryError, Unit] =
     for
       root <- withRoot
-      _ <- Option(root.storage.remove(id.value)) match
-        case Some(_) => persist(root)
-        case None    => ZIO.fail(BookRepositoryError.NotFound(id))
+      _    <- Option(root.storage.remove(id.value)) match
+                case Some(_) => persist(root)
+                case None    => ZIO.fail(BookRepositoryError.NotFound(id))
     yield ()
 
   override def list: IO[BookRepositoryError, Chunk[Book]] =

@@ -50,6 +50,18 @@ lazy val root = (project in file("."))
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
   )
 
+lazy val gigamap = (project in file("gigamap"))
+  .settings(
+    name := "zio-eclipsestore-gigamap",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      "dev.zio" %% "zio-test" % zioVersion % Test,
+      "dev.zio" %% "zio-test-sbt" % zioVersion % Test
+    ),
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
+  )
+  .dependsOn(root)
+
 lazy val bookstore = (project in file("examples/bookstore"))
   .settings(
     name := "zio-eclipsestore-bookstore",

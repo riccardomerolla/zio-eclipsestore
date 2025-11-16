@@ -1,7 +1,5 @@
 package io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.http
 
-import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.*
-import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.{BookRepository, BookRepositoryError}
 import zio.*
 import zio.http.*
 import zio.json.*
@@ -9,15 +7,18 @@ import zio.json.*
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 
+import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.*
+import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.{ BookRepository, BookRepositoryError }
+
 object BookRoutes:
-  private val BooksSegment = "books"
-  private val emptyHeaders = Headers.empty
+  private val BooksSegment     = "books"
+  private val emptyHeaders     = Headers.empty
   private val notFoundResponse = textResponse(Status.NotFound, "Not found")
 
   private def readBody[A: JsonDecoder](request: Request): IO[BookRepositoryError, A] =
     for
-      bytes <- request.body.asArray.mapError(err => BookRepositoryError.InvalidInput(err.getMessage))
-      json = new String(bytes, StandardCharsets.UTF_8)
+      bytes   <- request.body.asArray.mapError(err => BookRepositoryError.InvalidInput(err.getMessage))
+      json     = new String(bytes, StandardCharsets.UTF_8)
       decoded <- ZIO.fromEither(json.fromJson[A].left.map(BookRepositoryError.InvalidInput.apply))
     yield decoded
 
@@ -29,9 +30,9 @@ object BookRoutes:
 
   private def encodeError(error: BookRepositoryError): Response =
     error match
-      case BookRepositoryError.NotFound(id) =>
+      case BookRepositoryError.NotFound(id)            =>
         textResponse(Status.NotFound, s"Book ${id.value} not found")
-      case BookRepositoryError.InvalidInput(message) =>
+      case BookRepositoryError.InvalidInput(message)   =>
         textResponse(Status.BadRequest, message)
       case BookRepositoryError.StorageFailure(message) =>
         textResponse(Status.InternalServerError, message)
@@ -44,28 +45,28 @@ object BookRoutes:
   private def routeRequest(request: Request): ZIO[BookRepository, Nothing, Response] =
     val segments = request.url.path.segments.toList
     (request.method, segments) match
-      case (Method.GET, BooksSegment :: Nil) =>
+      case (Method.GET, BooksSegment :: Nil)              =>
         BookRepository
           .list
           .map(books => jsonResponse(books.toList))
           .catchAll(err => ZIO.succeed(encodeError(err)))
-      case (Method.POST, BooksSegment :: Nil) =>
+      case (Method.POST, BooksSegment :: Nil)             =>
         (for
           payload <- readBody[CreateBookRequest](request)
           created <- BookRepository.create(payload)
         yield jsonResponse(created))
           .catchAll(err => ZIO.succeed(encodeError(err)))
-      case (Method.GET, BooksSegment :: bookId :: Nil) =>
+      case (Method.GET, BooksSegment :: bookId :: Nil)    =>
         (for
-          id <- parseId(bookId)
+          id     <- parseId(bookId)
           result <- BookRepository.get(id)
         yield result match
           case Some(book) => jsonResponse(book)
           case None       => notFoundResponse
         ).catchAll(err => ZIO.succeed(encodeError(err)))
-      case (Method.PUT, BooksSegment :: bookId :: Nil) =>
+      case (Method.PUT, BooksSegment :: bookId :: Nil)    =>
         (for
-          id <- parseId(bookId)
+          id      <- parseId(bookId)
           payload <- readBody[UpdateBookRequest](request)
           updated <- BookRepository.update(id, payload)
         yield jsonResponse(updated))
@@ -73,10 +74,10 @@ object BookRoutes:
       case (Method.DELETE, BooksSegment :: bookId :: Nil) =>
         (for
           id <- parseId(bookId)
-          _ <- BookRepository.delete(id)
+          _  <- BookRepository.delete(id)
         yield Response(Status.NoContent, emptyHeaders, Body.empty))
           .catchAll(err => ZIO.succeed(encodeError(err)))
-      case _ =>
+      case _                                              =>
         ZIO.succeed(notFoundResponse)
 
   val routes: Routes[BookRepository, Response] =

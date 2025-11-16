@@ -10,6 +10,7 @@ A ZIO-based library for type-safe, efficient, and boilerplate-free access to [Ec
 - **Typed Root Instances**: Declaratively describe and access root aggregates
 - **Lifecycle Management**: Checkpoints, backups, and restarts via `LifecycleCommand`
 - **Streaming Persistence**: Stream keys/values and batch updates with `putAll`/`persistAll`
+- **GigaMap Module**: Advanced indexed maps with query DSL, CRUD, and persistence support
 - **Resource Safety**: ZIO's resource management ensures proper cleanup
 - **ZIO Schema Integration**: Schema-derived codecs for seamless serialization
 - **Effect-Oriented**: All operations are ZIO effects for composability
@@ -108,6 +109,20 @@ Default port: `8080`. Available routes:
 | `DELETE /books/{id}` | Remove a book and persist the root |
 
 All write operations automatically persist the `BookstoreRoot` and you can trigger checkpoints/backups via `EclipseStoreService` if desired.
+
+### GigaMap Module
+
+The `gigamap` sub-project implements EclispeStore's GigaMap feature set (CRUD, indexes, predicates, and persistence) on top of ZIO:
+
+- Configure maps and indexes via `GigaMapDefinition`/`GigaMapIndex`
+- Query using predicates or index lookups (`GigaMapQuery`)
+- Persist and reload through `EclipseStoreService`
+
+```
+sbt gigamap/test
+```
+
+You can create a map layer via `GigaMap.make(definition)` and inject it in your ZIO apps.
 
 ### Configuration
 

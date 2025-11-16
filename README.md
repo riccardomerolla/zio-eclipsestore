@@ -7,6 +7,9 @@ A ZIO-based library for type-safe, efficient, and boilerplate-free access to [Ec
 - **Type-Safe API**: Leverage ZIO's type system for compile-time safety
 - **Automatic Query Batching**: Batchable queries are optimized automatically
 - **Parallel Execution**: Un-batchable queries execute in parallel with controlled concurrency
+- **Typed Root Instances**: Declaratively describe and access root aggregates
+- **Lifecycle Management**: Checkpoints, backups, and restarts via `LifecycleCommand`
+- **Streaming Persistence**: Stream keys/values and batch updates with `putAll`/`persistAll`
 - **Resource Safety**: ZIO's resource management ensures proper cleanup
 - **ZIO Schema Integration**: Schema-derived codecs for seamless serialization
 - **Effect-Oriented**: All operations are ZIO effects for composability
@@ -23,23 +26,44 @@ libraryDependencies += "io.github.riccardomerolla" %% "zio-eclipsestore" % "0.1.
 
 ```scala
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
-import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
+import io.github.riccardomerolla.zio.eclipsestore.domain.{Query, RootDescriptor}
+import io.github.riccardomerolla.zio.eclipsestore.service.{EclipseStoreService, LifecycleCommand}
 import zio.*
+import scala.collection.mutable.ListBuffer
 
 object MyApp extends ZIOAppDefault:
   def run =
     val program = for
-      // Store values
-      _ <- EclipseStoreService.put("user:1", "Alice")
-      _ <- EclipseStoreService.put("user:2", "Bob")
+      // Batch store values
+      _ <- EclipseStoreService.putAll(
+        List("user:1" -> "Alice", "user:2" -> "Bob", "user:3" -> "Charlie")
+      )
       
       // Retrieve values
       user <- EclipseStoreService.get[String, String]("user:1")
       _ <- ZIO.logInfo(s"User: ${user.getOrElse("not found")}")
       
-      // Get all values
-      allUsers <- EclipseStoreService.getAll[String]
-      _ <- ZIO.logInfo(s"All users: ${allUsers.mkString(", ")}")
+      // Stream all values
+      streamed <- EclipseStoreService.streamValues[String].runCollect
+      _ <- ZIO.logInfo(s"All users: ${streamed.mkString(", ")}")
+      
+      // Work with typed roots
+      favoritesDescriptor = RootDescriptor(
+        id = "favorite-users",
+        initializer = () => ListBuffer.empty[String]
+      )
+      favorites <- EclipseStoreService.root(favoritesDescriptor)
+      _ <- ZIO.succeed(favorites.addOne("user:1"))
+      _ <- EclipseStoreService.maintenance(LifecycleCommand.Checkpoint)
+      
+      // Execute multiple queries in batch
+      queries = List(
+        Query.Get[String, String]("user:1"),
+        Query.Get[String, String]("user:2"),
+        Query.Get[String, String]("user:3")
+      )
+      results <- EclipseStoreService.executeMany(queries)
+      _ <- ZIO.logInfo(s"Batch query results: ${results.mkString(", ")}")
     yield ()
     
     program.provide(
@@ -54,13 +78,34 @@ Configure your EclipseStore instance:
 
 ```scala
 import java.nio.file.Paths
-import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
+import io.github.riccardomerolla.zio.eclipsestore.config.{EclipseStoreConfig, StoragePerformanceConfig, StorageTarget}
 
-// Use a specific storage path
-val config = EclipseStoreConfig.make(Paths.get("/data/mystore"))
+// Use a specific storage target and tweak performance options
+val config = EclipseStoreConfig(
+  storageTarget = StorageTarget.FileSystem(Paths.get("/data/mystore")),
+  performance = StoragePerformanceConfig(
+    channelCount = 8,
+    useOffHeapPageStore = true
+  )
+)
 
-// Or use temporary storage for testing
+// Or use temporary in-memory storage for testing
 val tempConfig = EclipseStoreConfig.temporary
+```
+
+### Storage Targets & Lifecycle Operations
+
+`StorageTarget` lets you choose between `FileSystem`, `MemoryMapped`, `InMemory`, or provide a custom foundation. Lifecycle hooks are exposed as strongly typed commands:
+
+```scala
+import java.nio.file.Paths
+import io.github.riccardomerolla.zio.eclipsestore.service.{EclipseStoreService, LifecycleCommand}
+
+for
+  _ <- EclipseStoreService.maintenance(LifecycleCommand.Checkpoint)
+  _ <- EclipseStoreService.maintenance(LifecycleCommand.Backup(Paths.get("/data/backup")))
+  status <- EclipseStoreService.status
+yield status
 ```
 
 ### Query API
@@ -68,7 +113,7 @@ val tempConfig = EclipseStoreConfig.temporary
 Execute type-safe queries:
 
 ```scala
-import io.github.riccardomerolla.zio.eclipsestore.domain.Query
+import io.github.riccardomerolla.zio.eclipsestore.domain.{Query, RootDescriptor}
 
 val queries = List(
   Query.Get[String, String]("key1"),
@@ -78,22 +123,13 @@ val queries = List(
 
 // Execute with automatic batching and parallel execution
 EclipseStoreService.executeMany(queries)
-```
 
-### Project Structure
-
-```
-src/
-  main/
-    scala/io/github/riccardomerolla/zio/eclipsestore/
-      app/EclipseStoreApp.scala           // example application
-      config/EclipseStoreConfig.scala      // configuration model
-      domain/Query.scala                   // query types
-      error/EclipseStoreError.scala        // typed errors
-      service/EclipseStoreService.scala    // main service
-  test/
-    scala/io/github/riccardomerolla/zio/eclipsestore/
-      EclipseStoreServiceSpec.scala        // comprehensive tests
+// Run a custom query against the root context
+val countUsers = Query.Custom[Int](
+  operation = "count-users",
+  run = ctx => ctx.container.ensure(RootDescriptor.concurrentMap[Any, Any]("kv-root")).size()
+)
+EclipseStoreService.execute(countUsers)
 ```
 
 ## Development Workflow
@@ -141,7 +177,7 @@ val nonBatch = Query.GetAllValues[String]()
 
 ### Resource Management
 
-The service uses ZIO's `Scope` for automatic resource cleanup:
+The service uses ZIO's `Scope` for automatic resource cleanup, health monitoring, and optional auto-checkpoints:
 
 ```scala
 val live: ZLayer[EclipseStoreConfig, EclipseStoreError, EclipseStoreService] =

@@ -5,7 +5,7 @@ ThisBuild / organizationHomepage := Some(url("https://github.com/riccardomerolla
 
 inThisBuild(List(
   organization := "io.github.riccardomerolla",
-  homepage := Some(url("https://github.com/riccardomerolla/zio-quickstart")),
+  homepage := Some(url("https://github.com/riccardomerolla/zio-eclipsestore")),
   licenses := Seq(
     "MIT" -> url("https://opensource.org/license/mit")
   ),
@@ -19,8 +19,8 @@ inThisBuild(List(
   ),
   scmInfo := Some(
     ScmInfo(
-      url("https://github.com/riccardomerolla/zio-quickstart"),
-      "scm:git@github.com:riccardomerolla/zio-quickstart.git"
+      url("https://github.com/riccardomerolla/zio-eclipsestore"),
+      "scm:git@github.com:riccardomerolla/zio-eclipsestore.git"
     )
   ),
   versionScheme := Some("early-semver")
@@ -28,8 +28,8 @@ inThisBuild(List(
 
 lazy val root = (project in file("."))
   .settings(
-    name := "zio-quickstart",
-    description := "Template repository for starting new Scala 3 / ZIO 2.x libraries",
+    name := "zio-eclipsestore",
+    description := "ZIO-based library for type-safe, efficient, and boilerplate-free access to EclipseStore",
     libraryDependencies ++= Seq(
       "dev.zio" %% "zio" % "2.1.22",
       "dev.zio" %% "zio-streams" % "2.1.22",
@@ -37,6 +37,8 @@ lazy val root = (project in file("."))
       "dev.zio" %% "zio-schema-derivation" % "1.7.5",
       "dev.zio" %% "zio-schema-json" % "1.7.5",
       "dev.zio" %% "zio-json" % "0.7.45",
+      "org.eclipse.store" % "storage-embedded" % "1.4.0",
+      "org.eclipse.store" % "storage-embedded-configuration" % "1.4.0",
       "dev.zio" %% "zio-test" % "2.1.22" % Test,
       "dev.zio" %% "zio-test-sbt" % "2.1.22" % Test
     ),

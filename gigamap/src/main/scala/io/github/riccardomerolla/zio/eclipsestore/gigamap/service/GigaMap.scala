@@ -88,10 +88,16 @@ final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[
     attempt(map.size())
 
   override def entries: IO[GigaMapError, Chunk[(K, V)]] =
-    attempt(Chunk.fromIterable(map.entrySet().asScala.map(e => (e.getKey.asInstanceOf[K], e.getValue.asInstanceOf[V]))))
+    attempt {
+      val iter = map.entrySet().iterator().asScala
+      Chunk.fromIterator(iter.map(e => (e.getKey.asInstanceOf[K], e.getValue.asInstanceOf[V])))
+    }
 
   override def keys: IO[GigaMapError, Chunk[K]] =
-    attempt(Chunk.fromIterable(map.keySet().asScala.map(_.asInstanceOf[K])))
+    attempt {
+      val iter = map.keySet().iterator().asScala
+      Chunk.fromIterator(iter.map(_.asInstanceOf[K]))
+    }
 
   override def query[A](query: GigaMapQuery[V, A]): IO[GigaMapError, A] =
     query match
@@ -113,7 +119,7 @@ final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[
         size.map(_.toLong).asInstanceOf[IO[GigaMapError, A]]
 
   override def persist: IO[GigaMapError, Unit] =
-    store.persist(registry).mapError(e => StorageFailure(e.toString, None))
+    persistState
 
   private def byIndex(indexName: String, value: Any): IO[GigaMapError, Chunk[V]] =
     for
@@ -148,7 +154,25 @@ final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[
     }
 
   private def persistIfNeeded: IO[GigaMapError, Unit] =
-    if definition.autoPersist then persist else ZIO.unit
+    if definition.autoPersist then persistState else ZIO.unit
+
+  private def persistState: IO[GigaMapError, Unit] =
+    val registryMaps              = registry.maps
+    val registryIndexes           = registry.indexes
+    val indexMaps                 =
+      indexState
+        .values()
+        .asScala
+        .toList
+    val indexBuckets              =
+      indexMaps.flatMap(_.values().asScala.toList)
+    val baseTargets: List[AnyRef] =
+      List(registry, registryMaps, registryIndexes, map, indexState)
+    val targets: List[AnyRef]     =
+      baseTargets ++ indexMaps ++ indexBuckets
+    store
+      .persistAll[AnyRef](targets)
+      .mapError(e => StorageFailure("Failed to persist GigaMap state", Some(new RuntimeException(e.toString))))
 
   private def attempt[A](thunk: => A): IO[GigaMapError, A] =
     ZIO.attempt(thunk).mapError(e => StorageFailure("GigaMap operation failed", Some(e)))

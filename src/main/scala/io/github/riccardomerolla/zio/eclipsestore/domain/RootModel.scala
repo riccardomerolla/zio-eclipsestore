@@ -58,6 +58,9 @@ final class RootContainer private[domain] (
     instances.clear()
     instances.putAll(other.instances)
 
+  private[eclipsestore] def instanceState: ConcurrentHashMap[String, AnyRef] =
+    instances
+
 object RootContainer:
   def empty: RootContainer =
     new RootContainer(new ConcurrentHashMap[String, AnyRef]())

@@ -126,24 +126,36 @@ You can create a map layer via `GigaMap.make(definition)` and inject it in your 
 
 #### GigaMap Bookstore REPL (zio-cli)
 
-A companion CLI (`gigamapCli` project) ports the original EclipseStore GigaMap bookstore REPL using `zio-cli` 0.7.4. It lets you insert, list, query, and delete books backed by an in-memory GigaMap.
+The `gigamapCli` project ports EclipseStore’s bookstore REPL using `zio-cli` 0.7.4. It now supports an interactive shell with built-in help.
+
+Interactive usage:
 
 ```
-sbt "gigamapCli/run list"
-sbt "gigamapCli/run insert 1;Example Title;Author0,Author1;2024"
+sbt gigamapCli/run
+gigamap> insert 1;Example Title;Author0,Author1;2024
+gigamap> list
+gigamap> help
+gigamap> exit
+```
+
+You can still invoke a single command directly:
+
+```
 sbt "gigamapCli/run findByAuthor Author0"
 ```
 
-Commands:
+Supported commands:
 
 | Command | Description |
 | --- | --- |
-| `list` | Show all stored books |
-| `insert <payload>` | Adds a book with payload `id;title;author1,author2;year` |
-| `findByTitle <title>` | Query by title index |
-| `findByAuthor <author>` | Query by author index |
-| `delete <id>` | Remove a book |
-| `count` | Display total number of books |
+| `insert <id;title;author1,author2;year>` | Adds a book |
+| `list` | Shows all books |
+| `findByTitle <title>` | Searches by title |
+| `findByAuthor <author>` | Searches by author |
+| `delete <id>` | Removes a book |
+| `count` | Displays total number of books |
+| `help` | Prints the help banner |
+| `exit`/`quit` | Leaves the REPL |
 
 ### Configuration
 

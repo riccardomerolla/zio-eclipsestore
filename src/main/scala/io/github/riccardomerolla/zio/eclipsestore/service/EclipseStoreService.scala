@@ -100,7 +100,8 @@ final case class EclipseStoreServiceLive(
   private def persistRootState: IO[EclipseStoreError, Unit] =
     ZIO
       .attempt {
-        storageManager.store(rootContainer)
+        storageManager.store(rootContainer.instanceState)
+        storageManager.setRoot(rootContainer)
         storageManager.storeRoot()
       }
       .unit
@@ -210,14 +211,21 @@ final case class EclipseStoreServiceLive(
     ZStream.fromZIO(execute(Query.GetAllKeys[K]())).flatMap(keys => ZStream.fromIterable(keys))
 
   override def root[A](descriptor: RootDescriptor[A]): IO[EclipseStoreError, A] =
-    ZIO
-      .attempt(rootContainer.ensure(descriptor))
-      .mapError(e => EclipseStoreError.ResourceError(s"Failed to obtain root: ${descriptor.id}", Some(e)))
+    for
+      existed <- ZIO
+                   .attempt(rootContainer.get(descriptor).isDefined)
+                   .mapError(e => EclipseStoreError.ResourceError(s"Failed to obtain root: ${descriptor.id}", Some(e)))
+      value   <- ZIO
+                   .attempt(rootContainer.ensure(descriptor))
+                   .mapError(e => EclipseStoreError.ResourceError(s"Failed to obtain root: ${descriptor.id}", Some(e)))
+      _       <- ZIO.when(!existed)(persistRootState)
+    yield value
 
   override def persist[A](value: A): IO[EclipseStoreError, Unit] =
     ZIO
       .attempt {
         storageManager.store(value)
+        storageManager.storeRoot()
       }
       .unit
       .mapError(e => EclipseStoreError.StorageError("Failed to persist value", Some(e)))
@@ -396,7 +404,9 @@ object EclipseStoreService:
         rootContainer     <- ZIO
                                .attempt {
                                  storageManager.root() match
-                                   case container: RootContainer     => container
+                                   case container: RootContainer     =>
+                                     storageManager.setRoot(container)
+                                     container
                                    case map: ConcurrentHashMap[?, ?] =>
                                      val container = RootContainer.empty
                                      val kvRoot    = RootDescriptor.concurrentMap[Any, Any]("kv-root")

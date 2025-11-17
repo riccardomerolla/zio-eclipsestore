@@ -320,7 +320,7 @@ final case class EclipseStoreServiceLive(
   private def backupTo(target: Path): IO[EclipseStoreError, Unit] =
     config.storageTarget.storagePath match
       case Some(source) =>
-        copyDirectory(source, target)
+        persistRootState *> copyDirectory(source, target)
       case None         =>
         ZIO.fail(EclipseStoreError.ResourceError("Cannot backup in-memory storage target", None))
 
@@ -476,7 +476,7 @@ object EclipseStoreService:
           ZIO
             .attempt(config.storageTarget.buildFoundation())
             .mapError(e => EclipseStoreError.InitializationError("Failed to build storage foundation", Some(e)))
-        _                 <- configureFoundation(foundation, config.performance)
+        _                 <- configureFoundation(foundation, config.performance, config)
         storageManager    <-
           ZIO
             .attempt {
@@ -550,6 +550,7 @@ object EclipseStoreService:
   private def configureFoundation(
       foundation: EmbeddedStorageFoundation[?],
       performance: StoragePerformanceConfig,
+      config: EclipseStoreConfig,
     ): IO[EclipseStoreError, Unit] =
     ZIO
       .attempt {
@@ -568,6 +569,15 @@ object EclipseStoreService:
           case CompressionSetting.Disabled => ()
           case other                       => invokeIfExists("setCompression", Seq(other.toString))
         performance.encryptionKey.foreach(key => invokeIfExists("setEncryptionKey", Seq(key)))
+        config.backupDirectory.foreach(dir => invokeIfExists("setBackupDirectory", Seq(dir.toString)))
+        config
+          .backupTruncationDirectory
+          .foreach(dir => invokeIfExists("setBackupTruncationDirectory", Seq(dir.toString)))
+        config.backupDeletionDirectory.foreach(dir => invokeIfExists("setBackupDeletionDirectory", Seq(dir.toString)))
+        config.backupExternalProperties.foreach {
+          case (k, v) =>
+            invokeIfExists("setBackupConfigurationProperty", Seq(k, v))
+        }
       }
       .mapError(e => EclipseStoreError.InitializationError("Failed to apply storage configuration", Some(e)))
 

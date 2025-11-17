@@ -76,6 +76,10 @@ final case class EclipseStoreConfig(
     performance: StoragePerformanceConfig = StoragePerformanceConfig(),
     healthCheckInterval: Duration = Duration.fromSeconds(5),
     autoCheckpointInterval: Option[Duration] = None,
+    backupDirectory: Option[Path] = None,
+    backupTruncationDirectory: Option[Path] = None,
+    backupDeletionDirectory: Option[Path] = None,
+    backupExternalProperties: Map[String, String] = Map.empty,
   )
 
 object EclipseStoreConfig:

@@ -160,6 +160,25 @@ object EclipseStoreServiceSpec extends ZIOSpecDefault:
           stopped == LifecycleStatus.Stopped,
         )
       },
+      test("backup directory configuration applies without error") {
+        ZIO.scoped {
+          for
+            path   <- ZIO.attemptBlocking(Files.createTempDirectory("backup-config"))
+            _      <- ZIO.addFinalizer(ZIO.attemptBlocking(deleteDirectory(path)).orDie)
+            layer   = ZLayer.succeed(
+                        EclipseStoreConfig(
+                          storageTarget = StorageTarget.FileSystem(path),
+                          backupDirectory = Some(path.resolve("backup-dir")),
+                          backupTruncationDirectory = Some(path.resolve("backup-trunc")),
+                          backupDeletionDirectory = Some(path.resolve("backup-delete")),
+                          backupExternalProperties = Map("backup-filesystem.sql.sqlite.url" -> "jdbc:sqlite:test"),
+                        )
+                      ) >>>
+                        EclipseStoreService.live
+            result <- EclipseStoreService.put("bk", "val").provideLayer(layer).either
+          yield assertTrue(result.isRight)
+        }
+      },
       test("exports and imports storage contents") {
         ZIO.scoped {
           for

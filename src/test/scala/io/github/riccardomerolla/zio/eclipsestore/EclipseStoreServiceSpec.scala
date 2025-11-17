@@ -3,11 +3,21 @@ package io.github.riccardomerolla.zio.eclipsestore
 import zio.*
 import zio.test.*
 
+import java.nio.file.{ Files, Path }
+import java.util.Comparator
+
+import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
 import io.github.riccardomerolla.zio.eclipsestore.domain.{ Query, RootDescriptor }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand, LifecycleStatus }
 import scala.collection.mutable.ListBuffer
 
 object EclipseStoreServiceSpec extends ZIOSpecDefault:
+
+  private def deleteDirectory(path: Path): Unit =
+    if Files.exists(path) then Files.walk(path).sorted(Comparator.reverseOrder()).forEach(Files.delete)
+
+  private def liveLayer(path: Path) =
+    ZLayer.succeed(EclipseStoreConfig.make(path)) >>> EclipseStoreService.live
 
   override def spec =
     suite("EclipseStoreService")(
@@ -146,5 +156,31 @@ object EclipseStoreServiceSpec extends ZIOSpecDefault:
             case _                          => false,
           stopped == LifecycleStatus.Stopped,
         )
+      },
+      test("exports and imports storage contents") {
+        ZIO.scoped {
+          for
+            src      <- ZIO.attemptBlocking(Files.createTempDirectory("store-src"))
+            exported <- ZIO.attemptBlocking(Files.createTempDirectory("store-export"))
+            dest     <- ZIO.attemptBlocking(Files.createTempDirectory("store-dest"))
+            _        <- ZIO.addFinalizer(
+                          ZIO.attemptBlocking {
+                            deleteDirectory(src)
+                            deleteDirectory(exported)
+                            deleteDirectory(dest)
+                          }.orDie
+                        )
+            srcLayer  = liveLayer(src)
+            destLayer = liveLayer(dest)
+            _        <- (for
+                          _ <- EclipseStoreService.put("k1", "v1")
+                          _ <- EclipseStoreService.exportData(exported)
+                        yield ()).provideLayer(srcLayer)
+            restored <- (for
+                          _ <- EclipseStoreService.importData(exported)
+                          v <- EclipseStoreService.get[String, String]("k1")
+                        yield v).provideLayer(destLayer)
+          yield assertTrue(restored.contains("v1"))
+        }
       },
     ).provide(EclipseStoreService.inMemory)

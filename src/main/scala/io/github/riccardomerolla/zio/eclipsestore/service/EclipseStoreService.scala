@@ -15,13 +15,15 @@ import io.github.riccardomerolla.zio.eclipsestore.config.{
 import io.github.riccardomerolla.zio.eclipsestore.domain.{ Query, RootContainer, RootContext, RootDescriptor }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import org.eclipse.serializer.persistence.types.{ Persister, Storer }
-import org.eclipse.store.storage.embedded.types.{ EmbeddedStorageFoundation, EmbeddedStorageManager }
+import org.eclipse.store.storage.embedded.types.{ EmbeddedStorage, EmbeddedStorageFoundation, EmbeddedStorageManager }
 import scala.jdk.CollectionConverters.*
 import scala.util.Using
 
 enum LifecycleCommand:
   case Checkpoint
   case Backup(target: Path, includeConfig: Boolean = true)
+  case Export(target: Path)
+  case Import(source: Path)
   case Restart
   case Shutdown
 
@@ -79,6 +81,12 @@ trait EclipseStoreService:
 
   /** Observes lifecycle status */
   def status: UIO[LifecycleStatus]
+
+  /** Exports the current store to the given directory */
+  def exportData(target: Path): IO[EclipseStoreError, Unit]
+
+  /** Imports store contents from the given directory into the configured storage target */
+  def importData(source: Path): IO[EclipseStoreError, Unit]
 
 /** Live implementation of EclipseStoreService backed by EclipseStore */
 final case class EclipseStoreServiceLive(
@@ -252,6 +260,10 @@ final case class EclipseStoreServiceLive(
         persistRootState *> status
       case LifecycleCommand.Backup(target, _) =>
         backupTo(target) *> status
+      case LifecycleCommand.Export(target)    =>
+        exportData(target) *> status
+      case LifecycleCommand.Import(source)    =>
+        importData(source) *> status
       case LifecycleCommand.Restart           =>
         restartManager *> status
       case LifecycleCommand.Shutdown          =>
@@ -260,25 +272,92 @@ final case class EclipseStoreServiceLive(
   override val status: UIO[LifecycleStatus] =
     statusRef.get
 
+  override def exportData(target: Path): IO[EclipseStoreError, Unit] =
+    for
+      _         <- persistRootState
+      _         <- wipeDirectory(target)
+      exportMgr <- ZIO
+                     .attempt(EmbeddedStorage.start(target))
+                     .mapError(e => EclipseStoreError.InitializationError("Failed to open export storage", Some(e)))
+      exportRoot = rootContainer
+      _         <- ZIO
+                     .attempt {
+                       exportMgr.setRoot(exportRoot)
+                       exportMgr.storeRoot()
+                       exportMgr.shutdown()
+                     }
+                     .mapError(e => EclipseStoreError.StorageError("Failed to export store", Some(e)))
+    yield ()
+
+  override def importData(source: Path): IO[EclipseStoreError, Unit] =
+    for
+      imported     <- ZIO
+                        .attempt(EmbeddedStorage.start(source))
+                        .mapError(e => EclipseStoreError.InitializationError("Failed to open import storage", Some(e)))
+      importedRoot <- ZIO
+                        .attempt {
+                          imported.root() match
+                            case container: RootContainer     => container
+                            case map: ConcurrentHashMap[?, ?] =>
+                              val container = RootContainer.empty
+                              val kvRoot    = RootDescriptor.concurrentMap[Any, Any]("kv-root")
+                              val typed     = container.ensure(kvRoot)
+                              typed.putAll(map.asInstanceOf[ConcurrentHashMap[Any, Any]])
+                              container
+                            case _                            =>
+                              RootContainer.empty
+                        }
+                        .mapError(e => EclipseStoreError.ResourceError("Failed to read import root", Some(e)))
+      _            <- ZIO
+                        .attempt(imported.shutdown())
+                        .ignore
+      _            <- ZIO
+                        .attempt(rootContainer.replaceWith(importedRoot))
+                        .mapError(e => EclipseStoreError.ResourceError("Failed to replace root during import", Some(e)))
+      _            <- persistRootState
+    yield ()
+
   private def backupTo(target: Path): IO[EclipseStoreError, Unit] =
     config.storageTarget.storagePath match
       case Some(source) =>
-        ZIO
-          .attempt {
-            if java.nio.file.Files.notExists(target) then java.nio.file.Files.createDirectories(target)
-            val sourcePath = source
-            Using.resource(java.nio.file.Files.walk(sourcePath)) { stream =>
-              stream.iterator().asScala.foreach { path =>
-                val dest = target.resolve(sourcePath.relativize(path))
-                if java.nio.file.Files.isDirectory(path) then
-                  if java.nio.file.Files.notExists(dest) then java.nio.file.Files.createDirectories(dest)
-                else java.nio.file.Files.copy(path, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-              }
-            }
-          }
-          .mapError(e => EclipseStoreError.ResourceError("Failed to create backup", Some(e)))
+        copyDirectory(source, target)
       case None         =>
         ZIO.fail(EclipseStoreError.ResourceError("Cannot backup in-memory storage target", None))
+
+  private def copyDirectory(source: Path, target: Path): IO[EclipseStoreError, Unit] =
+    ZIO
+      .attempt {
+        if java.nio.file.Files.notExists(target) then java.nio.file.Files.createDirectories(target)
+        val sourcePath = source
+        Using.resource(java.nio.file.Files.walk(sourcePath)) { stream =>
+          stream.iterator().asScala.foreach { path =>
+            val dest = target.resolve(sourcePath.relativize(path))
+            if java.nio.file.Files.isDirectory(path) then
+              if java.nio.file.Files.notExists(dest) then java.nio.file.Files.createDirectories(dest)
+            else java.nio.file.Files.copy(path, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+          }
+        }
+      }
+      .mapError(e => EclipseStoreError.ResourceError("Failed to copy storage directory", Some(e)))
+
+  private def wipeDirectory(target: Path): IO[EclipseStoreError, Unit] =
+    ZIO
+      .attempt {
+        if java.nio.file.Files.exists(target) then
+          Using.resource(java.nio.file.Files.walk(target)) { stream =>
+            stream
+              .iterator()
+              .asScala
+              .toList
+              .sortBy(_.toString.length)
+              .reverse
+              .foreach { path =>
+                if path != target then java.nio.file.Files.deleteIfExists(path)
+              }
+          }
+        if java.nio.file.Files.notExists(target) then java.nio.file.Files.createDirectories(target)
+      }
+      .mapError(e => EclipseStoreError.ResourceError("Failed to wipe target directory", Some(e)))
 
   private def restartManager: IO[EclipseStoreError, Unit] =
     for
@@ -371,6 +450,14 @@ object EclipseStoreService:
   /** Accessor for lifecycle status */
   val status: URIO[EclipseStoreService, LifecycleStatus] =
     ZIO.serviceWithZIO[EclipseStoreService](_.status)
+
+  /** Accessor for exporting store contents */
+  def exportData(target: Path): ZIO[EclipseStoreService, EclipseStoreError, Unit] =
+    ZIO.serviceWithZIO[EclipseStoreService](_.exportData(target))
+
+  /** Accessor for importing store contents */
+  def importData(source: Path): ZIO[EclipseStoreService, EclipseStoreError, Unit] =
+    ZIO.serviceWithZIO[EclipseStoreService](_.importData(source))
 
   /** Accessor method for executing a query */
   def execute[A](query: Query[A]): ZIO[EclipseStoreService, EclipseStoreError, A] =
@@ -551,6 +638,12 @@ object EclipseStoreService:
             case LifecycleCommand.Shutdown =>
               statusRef.set(LifecycleStatus.Stopped) *> statusRef.get
             case _                         => statusRef.get
+
+        override def exportData(target: Path): IO[EclipseStoreError, Unit] =
+          ZIO.fail(EclipseStoreError.ResourceError("Cannot export in-memory store", None))
+
+        override def importData(source: Path): IO[EclipseStoreError, Unit] =
+          ZIO.fail(EclipseStoreError.ResourceError("Cannot import into in-memory store", None))
 
         override val status: UIO[LifecycleStatus] =
           statusRef.get

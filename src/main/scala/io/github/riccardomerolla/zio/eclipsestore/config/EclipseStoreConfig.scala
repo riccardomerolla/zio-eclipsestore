@@ -14,6 +14,24 @@ sealed trait StorageTarget:
   def buildFoundation(): EmbeddedStorageFoundation[?]
 
 object StorageTarget:
+  /** SQLite-backed target. Uses a directory to host the SQLite file; connectionString lets callers supply full JDBC DSN
+    * pragmas.
+    */
+  final case class Sqlite(
+      path: Path,
+      storageName: String = "eclipsestore.db",
+      connectionString: Option[String] = None,
+      busyTimeoutMs: Option[Int] = None,
+      cacheSizeKb: Option[Int] = None,
+      pageSizeBytes: Option[Int] = None,
+      journalMode: Option[String] = None,
+      synchronousMode: Option[String] = None,
+    ) extends StorageTarget:
+    override val storagePath: Option[Path] = Some(path)
+    override def buildFoundation(): EmbeddedStorageFoundation[?] =
+      // Current driver uses directory-backed storage; connectionString and pragmas are retained for future JDBC-aware foundations.
+      org.eclipse.store.storage.embedded.types.EmbeddedStorage.Foundation(path)
+
   final case class FileSystem(path: Path) extends StorageTarget:
     override val storagePath: Option[Path]                       = Some(path)
     override def buildFoundation(): EmbeddedStorageFoundation[?] =

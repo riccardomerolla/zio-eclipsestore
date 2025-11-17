@@ -91,3 +91,16 @@ lazy val bookstore = (project in file("examples/bookstore"))
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
   )
   .dependsOn(root)
+
+lazy val storageSqlite = (project in file("storage-sqlite"))
+  .settings(
+    name := "zio-eclipsestore-storage-sqlite",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      "org.xerial" % "sqlite-jdbc" % "3.46.0.1",
+      "dev.zio" %% "zio-test" % zioVersion % Test,
+      "dev.zio" %% "zio-test-sbt" % zioVersion % Test
+    ),
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
+  )
+  .dependsOn(root)

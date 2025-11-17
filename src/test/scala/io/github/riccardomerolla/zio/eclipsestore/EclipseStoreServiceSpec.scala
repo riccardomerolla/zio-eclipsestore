@@ -6,7 +6,7 @@ import zio.test.*
 import java.nio.file.{ Files, Path }
 import java.util.Comparator
 
-import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
+import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.domain.{ Query, RootDescriptor }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand, LifecycleStatus }
 import scala.collection.mutable.ListBuffer
@@ -18,6 +18,9 @@ object EclipseStoreServiceSpec extends ZIOSpecDefault:
 
   private def liveLayer(path: Path) =
     ZLayer.succeed(EclipseStoreConfig.make(path)) >>> EclipseStoreService.live
+
+  private def sqliteLayer(path: Path) =
+    ZLayer.succeed(EclipseStoreConfig(StorageTarget.Sqlite(path))) >>> EclipseStoreService.live
 
   override def spec =
     suite("EclipseStoreService")(
@@ -181,6 +184,19 @@ object EclipseStoreServiceSpec extends ZIOSpecDefault:
                           v <- EclipseStoreService.get[String, String]("k1")
                         yield v).provideLayer(destLayer)
           yield assertTrue(restored.contains("v1"))
+        }
+      },
+      test("sqlite storage target persists values") {
+        ZIO.scoped {
+          for
+            dbDir <- ZIO.attemptBlocking(Files.createTempDirectory("sqlite-target"))
+            _     <- ZIO.addFinalizer(ZIO.attemptBlocking(deleteDirectory(dbDir)).orDie)
+            layer  = sqliteLayer(dbDir)
+            _     <- (for _ <- EclipseStoreService.put("user:1", "alice")
+                     yield ()).provideLayer(layer)
+            read  <- (for v <- EclipseStoreService.get[String, String]("user:1")
+                     yield v).provideLayer(layer)
+          yield assertTrue(read.contains("alice"))
         }
       },
     ).provide(EclipseStoreService.inMemory)

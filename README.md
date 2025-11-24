@@ -20,7 +20,10 @@ A ZIO-based library for type-safe, efficient, and boilerplate-free access to [Ec
 Add the dependency to your `build.sbt`:
 
 ```scala
-libraryDependencies += "io.github.riccardomerolla" %% "zio-eclipsestore" % "0.1.0"
+libraryDependencies ++= Seq(
+  "io.github.riccardomerolla" %% "zio-eclipsestore" % "0.1.0",
+  "io.github.riccardomerolla" %% "zio-eclipsestore-storage-sqlite" % "0.1.0" // Optional: for SQLite support
+)
 ```
 
 ### Quick Example
@@ -178,9 +181,29 @@ val config = EclipseStoreConfig(
 val tempConfig = EclipseStoreConfig.temporary
 ```
 
+### SQLite Storage
+
+To use SQLite as the storage backend, add the `zio-eclipsestore-storage-sqlite` dependency and use `SQLiteAdapter` or `StorageTarget.Sqlite`:
+
+```scala
+import io.github.riccardomerolla.zio.eclipsestore.sqlite.SQLiteAdapter
+import java.nio.file.Paths
+
+// Create a layer directly
+val sqliteLayer = SQLiteAdapter.live(
+  basePath = Paths.get("./data"),
+  storageName = "my-store.db"
+)
+
+// Or via config
+val config = SQLiteAdapter.config(
+  basePath = Paths.get("./data")
+)
+```
+
 ### Storage Targets & Lifecycle Operations
 
-`StorageTarget` lets you choose between `FileSystem`, `MemoryMapped`, `InMemory`, or provide a custom foundation. Lifecycle hooks are exposed as strongly typed commands:
+`StorageTarget` lets you choose between `FileSystem`, `MemoryMapped`, `InMemory`, `Sqlite` (requires `zio-eclipsestore-storage-sqlite`), or provide a custom foundation. Lifecycle hooks are exposed as strongly typed commands:
 
 ```scala
 import java.nio.file.Paths

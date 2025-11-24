@@ -44,6 +44,8 @@ lazy val root = (project in file("."))
       "dev.zio" %% "zio-json" % zioJsonVersion,
       "org.eclipse.store" % "storage-embedded" % "3.0.1",
       "org.eclipse.store" % "storage-embedded-configuration" % "3.0.1",
+      "org.eclipse.serializer" % "persistence-binary-jdk8" % "3.0.1",
+      "org.eclipse.serializer" % "base" % "3.0.1",
       "dev.zio" %% "zio-test" % zioVersion % Test,
       "dev.zio" %% "zio-test-sbt" % zioVersion % Test
     ),

@@ -64,6 +64,18 @@ lazy val gigamap = (project in file("gigamap"))
   )
   .dependsOn(root)
 
+lazy val lazyLoadingExample = (project in file("examples/lazy-loading"))
+  .settings(
+    name := "zio-eclipsestore-lazy-loading",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      "dev.zio" %% "zio-test" % zioVersion % Test,
+      "dev.zio" %% "zio-test-sbt" % zioVersion % Test
+    ),
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
+  )
+  .dependsOn(root)
+
 lazy val gigamapCli = (project in file("examples/gigamap-cli"))
   .settings(
     name := "zio-eclipsestore-gigamap-cli",

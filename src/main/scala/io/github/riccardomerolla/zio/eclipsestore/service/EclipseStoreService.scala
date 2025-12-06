@@ -578,6 +578,10 @@ object EclipseStoreService:
           case (k, v) =>
             invokeIfExists("setBackupConfigurationProperty", Seq(k, v))
         }
+        if config.customTypeHandlers.nonEmpty then
+          foundation.onConnectionFoundation(cf =>
+            config.customTypeHandlers.foreach(handler => cf.registerCustomTypeHandlers(handler))
+          )
       }
       .mapError(e => EclipseStoreError.InitializationError("Failed to apply storage configuration", Some(e)))
 

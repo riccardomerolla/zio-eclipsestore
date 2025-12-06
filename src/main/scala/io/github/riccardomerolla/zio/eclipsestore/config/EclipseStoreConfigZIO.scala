@@ -109,6 +109,7 @@ object EclipseStoreConfigZIO:
       backupTruncationDirectory = in.backupTruncationDirectory,
       backupDeletionDirectory = in.backupDeletionDirectory,
       backupExternalProperties = in.backupExternalProperties.getOrElse(Map.empty),
+      customTypeHandlers = defaults.customTypeHandlers,
     )
 
   val fromResourcePath: ZLayer[Any, zio.Config.Error, EclipseStoreConfig] =

@@ -6,6 +6,8 @@ import java.nio.file.{ Files, Path }
 
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor.concurrentMap
+import org.eclipse.serializer.persistence.binary.types.Binary
+import org.eclipse.serializer.persistence.types.PersistenceTypeHandler
 import org.eclipse.store.storage.embedded.types.EmbeddedStorageFoundation
 
 /** Storage target supported by EclipseStore */
@@ -80,6 +82,7 @@ final case class EclipseStoreConfig(
     backupTruncationDirectory: Option[Path] = None,
     backupDeletionDirectory: Option[Path] = None,
     backupExternalProperties: Map[String, String] = Map.empty,
+    customTypeHandlers: Chunk[PersistenceTypeHandler[Binary, ?]] = Chunk.empty,
   )
 
 object EclipseStoreConfig:

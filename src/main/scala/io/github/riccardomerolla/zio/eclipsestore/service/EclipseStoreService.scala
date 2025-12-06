@@ -547,8 +547,8 @@ object EclipseStoreService:
       yield service
     }
 
-  private def configureFoundation(
-      foundation: EmbeddedStorageFoundation[?],
+  private[eclipsestore] def configureFoundation(
+      foundation: AnyRef,
       performance: StoragePerformanceConfig,
       config: EclipseStoreConfig,
     ): IO[EclipseStoreError, Unit] =
@@ -577,12 +577,33 @@ object EclipseStoreService:
         val backupProps =
           config.backupExternalProperties ++ config.backupTarget.map(_.toProperties).getOrElse(Map.empty)
         applyBackupConfiguration(foundation, backupProps)
-        if config.customTypeHandlers.nonEmpty then
-          foundation.onConnectionFoundation(cf =>
-            config.customTypeHandlers.foreach(handler => cf.registerCustomTypeHandlers(handler))
-          )
-        config.eagerStoringEvaluator.foreach { eval =>
-          foundation.onConnectionFoundation(cf => cf.setReferenceFieldEagerEvaluator(eval))
+        val connectionFoundation =
+          foundation
+            .getClass
+            .getMethods
+            .find(m => m.getName == "onConnectionFoundation" && m.getParameterCount == 1)
+
+        connectionFoundation.foreach { method =>
+          val consumer = new java.util.function.Consumer[AnyRef]:
+            override def accept(cf: AnyRef): Unit =
+              def invokeCf(name: String, args: Seq[AnyRef]): Unit =
+                cf.getClass.getMethods.find(m => m.getName == name && m.getParameterCount == args.length).foreach { m =>
+                  try
+                    val finalArgs =
+                      if m.isVarArgs && args.length == 1 && m.getParameterTypes.head.isArray then
+                        val arrayType = m.getParameterTypes.head.getComponentType
+                        val arr       = java.lang.reflect.Array.newInstance(arrayType, 1).asInstanceOf[Array[AnyRef]]
+                        arr(0) = args.head
+                        Seq(arr)
+                      else args
+                    m.invoke(cf, finalArgs*)
+                  catch case _: Throwable => () // best-effort registration
+                }
+
+              config.customTypeHandlers.foreach(handler => invokeCf("registerCustomTypeHandlers", Seq(handler)))
+              config.eagerStoringEvaluator.foreach(eval => invokeCf("setReferenceFieldEagerEvaluator", Seq(eval)))
+
+          method.invoke(foundation, consumer)
         }
       }
       .mapError(e => EclipseStoreError.InitializationError("Failed to apply storage configuration", Some(e)))

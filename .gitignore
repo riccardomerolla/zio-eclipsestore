@@ -19,3 +19,6 @@ sbt/
 *.iml
 .vscode/
 .DS_Store
+
+.sbt-boot/
+.sbt-global/

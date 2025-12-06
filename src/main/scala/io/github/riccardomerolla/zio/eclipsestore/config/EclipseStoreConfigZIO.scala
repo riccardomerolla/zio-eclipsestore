@@ -5,11 +5,12 @@ import zio.config.magnolia.{ deriveConfig, deriveConfigFromConfig }
 import zio.config.typesafe.TypesafeConfigProvider
 
 import java.nio.file.Path
+
 import com.typesafe.config.{ Config as HoconConfig, ConfigFactory }
 
 object EclipseStoreConfigZIO:
 
-  private final case class ConfigInput(
+  final private case class ConfigInput(
       maxParallelism: Option[Int],
       batchSize: Option[Int],
       queryTimeout: Option[zio.Duration],
@@ -40,15 +41,16 @@ object EclipseStoreConfigZIO:
         zio.Config.boolean("performance.useOffHeapPageStore").withDefault(false) ++
         compressionConfig.optional ++
         zio.Config.string("performance.encryptionKey").optional.map(_.map(_.getBytes()))
-    ).map { case (channels, pageCache, objectCache, offHeap, compression, key) =>
-      StoragePerformanceConfig(
-        channelCount = channels,
-        pageCacheSizeBytes = pageCache,
-        objectCacheSizeBytes = objectCache,
-        useOffHeapPageStore = offHeap,
-        compression = compression.getOrElse(CompressionSetting.Disabled),
-        encryptionKey = key,
-      )
+    ).map {
+      case (channels, pageCache, objectCache, offHeap, compression, key) =>
+        StoragePerformanceConfig(
+          channelCount = channels,
+          pageCacheSizeBytes = pageCache,
+          objectCacheSizeBytes = objectCache,
+          useOffHeapPageStore = offHeap,
+          compression = compression.getOrElse(CompressionSetting.Disabled),
+          encryptionKey = key,
+        )
     }
 
   private given zio.config.magnolia.DeriveConfig[StoragePerformanceConfig] =
@@ -60,11 +62,11 @@ object EclipseStoreConfigZIO:
     deriveConfig[ConfigInput].nested("eclipsestore")
 
   private def resolveStorageTarget(config: HoconConfig): StorageTarget =
-    val base    = "eclipsestore.storageTarget"
-    val sqlite  = s"$base.sqlite"
-    val fsPath  = s"$base.fileSystem.path"
-    val mmPath  = s"$base.memoryMapped.path"
-    val inMem   = s"$base.inMemory.prefix"
+    val base   = "eclipsestore.storageTarget"
+    val sqlite = s"$base.sqlite"
+    val fsPath = s"$base.fileSystem.path"
+    val mmPath = s"$base.memoryMapped.path"
+    val inMem  = s"$base.inMemory.prefix"
 
     if config.hasPath(fsPath) then StorageTarget.FileSystem(Path.of(config.getString(fsPath)))
     else if config.hasPath(s"$sqlite.path") then
@@ -93,9 +95,9 @@ object EclipseStoreConfigZIO:
       val prefix = if config.hasPath(inMem) then config.getString(inMem) else "eclipsestore"
       StorageTarget.InMemory(prefix)
 
-  private def loadConfig(provider: zio.ConfigProvider, hocon: HoconConfig): ZIO[Any, zio.Config.Error, EclipseStoreConfig] =
-    for
-      in <- provider.load(config)
+  private def loadConfig(provider: zio.ConfigProvider, hocon: HoconConfig)
+      : ZIO[Any, zio.Config.Error, EclipseStoreConfig] =
+    for in <- provider.load(config)
     yield EclipseStoreConfig(
       storageTarget = resolveStorageTarget(hocon),
       maxParallelism = in.maxParallelism.getOrElse(defaults.maxParallelism),

@@ -2,9 +2,10 @@ package io.github.riccardomerolla.zio.eclipsestore
 
 import zio.*
 import zio.test.*
-import io.github.riccardomerolla.zio.eclipsestore.examples.eagerstoring.EagerStoringExample
 
 import java.nio.file.Files
+
+import io.github.riccardomerolla.zio.eclipsestore.examples.eagerstoring.EagerStoringExample
 import scala.jdk.CollectionConverters.*
 
 object EagerStoringExampleSpec extends ZIOSpecDefault:
@@ -13,8 +14,7 @@ object EagerStoringExampleSpec extends ZIOSpecDefault:
     ZLayer.scoped {
       ZIO.acquireRelease(ZIO.attemptBlocking(Files.createTempDirectory("eager-example")).orDie)(dir =>
         ZIO.attemptBlocking {
-          if Files.exists(dir) then
-            Files.walk(dir).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
+          if Files.exists(dir) then Files.walk(dir).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
         }.orDie
       )
     }
@@ -24,7 +24,7 @@ object EagerStoringExampleSpec extends ZIOSpecDefault:
       test("eager field persists on each step while non-eager grows only in memory until persisted") {
         ZIO.serviceWithZIO[java.nio.file.Path] { dir =>
           for
-            first <- EagerStoringExample.runStep(dir)
+            first  <- EagerStoringExample.runStep(dir)
             second <- EagerStoringExample.runStep(dir)
           yield
             val (nums1, dates1) = first

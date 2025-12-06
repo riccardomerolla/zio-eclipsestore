@@ -2,13 +2,13 @@ package io.github.riccardomerolla.zio.eclipsestore
 
 import zio.test.*
 
-import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 import io.github.riccardomerolla.zio.eclipsestore.config.BackupTarget
+import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
 object BackupTargetSpec extends ZIOSpecDefault:
 
-  private final class FakeFoundation:
-    var received: List[(String, String)] = Nil
+  final private class FakeFoundation:
+    var received: List[(String, String)]                                 = Nil
     def setBackupConfigurationProperty(key: String, value: String): Unit =
       received = received :+ (key -> value)
 
@@ -26,7 +26,7 @@ object BackupTargetSpec extends ZIOSpecDefault:
           catalog = Some("mycatalog"),
           schema = Some("myschema"),
         )
-        val props = target.toProperties
+        val props  = target.toProperties
         assertTrue(
           props("backup-filesystem.sql.sqlite.url") == "jdbc:sqlite:eclipsestore_bkup_db",
           props("backup-filesystem.sql.sqlite.data-source-provider") == "com.sample.MyDataSourceProvider",
@@ -41,7 +41,7 @@ object BackupTargetSpec extends ZIOSpecDefault:
           region = "us-east-1",
           sessionToken = Some("token"),
         )
-        val props = target.toProperties
+        val props  = target.toProperties
         assertTrue(
           props("backup-filesystem.aws.s3.credentials.type") == "static",
           props("backup-filesystem.aws.s3.credentials.access-key-id") == "id",
@@ -59,7 +59,7 @@ object BackupTargetSpec extends ZIOSpecDefault:
           schema = Some("public"),
           extra = Map("ssl" -> "true"),
         )
-        val props = target.toProperties
+        val props  = target.toProperties
         assertTrue(
           props("backup-filesystem.sql.postgres.url") == "jdbc:postgresql://localhost/db",
           props("backup-filesystem.sql.postgres.data-source-provider") == "com.foo.DSProvider",
@@ -77,7 +77,7 @@ object BackupTargetSpec extends ZIOSpecDefault:
           basePath = Some("/backups"),
           secure = true,
         )
-        val props = target.toProperties
+        val props  = target.toProperties
         assertTrue(
           props("backup-filesystem.ftp.host") == "ftp.example.com",
           props("backup-filesystem.ftp.user") == "user",
@@ -86,5 +86,5 @@ object BackupTargetSpec extends ZIOSpecDefault:
           props("backup-filesystem.ftp.base-path") == "/backups",
           props("backup-filesystem.ftp.secure") == "true",
         )
-      }
+      },
     )

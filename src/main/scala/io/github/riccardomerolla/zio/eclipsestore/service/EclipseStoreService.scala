@@ -574,7 +574,7 @@ object EclipseStoreService:
           .backupTruncationDirectory
           .foreach(dir => invokeIfExists("setBackupTruncationDirectory", Seq(dir.toString)))
         config.backupDeletionDirectory.foreach(dir => invokeIfExists("setBackupDeletionDirectory", Seq(dir.toString)))
-        val backupProps =
+        val backupProps          =
           config.backupExternalProperties ++ config.backupTarget.map(_.toProperties).getOrElse(Map.empty)
         applyBackupConfiguration(foundation, backupProps)
         val connectionFoundation =
@@ -617,8 +617,9 @@ object EclipseStoreService:
         m.invoke(target, args*)
       }
 
-    properties.foreach { case (k, v) =>
-      invoke("setBackupConfigurationProperty", Seq(k, v))
+    properties.foreach {
+      case (k, v) =>
+        invoke("setBackupConfigurationProperty", Seq(k, v))
     }
 
   /** Test implementation that uses an in-memory map */

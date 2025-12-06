@@ -3,8 +3,8 @@ package io.github.riccardomerolla.zio.eclipsestore.service
 import zio.*
 import zio.test.*
 
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 import io.github.riccardomerolla.zio.eclipsestore.config.*
 import org.eclipse.serializer.persistence.binary.types.Binary
@@ -14,29 +14,29 @@ import scala.jdk.CollectionConverters.*
 /** Verifies that performance-related configuration knobs are propagated to the underlying foundation. */
 object PerformanceConfigSpec extends ZIOSpecDefault:
 
-  private final class CapturingFoundation:
-    var channelCount: Option[Int]                             = None
-    var pageCache: Option[Long]                               = None
-    var objectCache: Option[Long]                             = None
-    var offHeap: Boolean                                      = false
-    var compression: Option[String]                           = None
-    var encryption: Option[Array[Byte]]                       = None
-    var backupDir: Option[String]                             = None
-    var truncationDir: Option[String]                         = None
-    var deletionDir: Option[String]                           = None
-    val backupProps: ConcurrentHashMap[String, String]        = new ConcurrentHashMap()
-    val handlerRegistered: AtomicBoolean                      = new AtomicBoolean(false)
-    val eagerEvaluatorRegistered: AtomicBoolean               = new AtomicBoolean(false)
+  final private class CapturingFoundation:
+    var channelCount: Option[Int]                      = None
+    var pageCache: Option[Long]                        = None
+    var objectCache: Option[Long]                      = None
+    var offHeap: Boolean                               = false
+    var compression: Option[String]                    = None
+    var encryption: Option[Array[Byte]]                = None
+    var backupDir: Option[String]                      = None
+    var truncationDir: Option[String]                  = None
+    var deletionDir: Option[String]                    = None
+    val backupProps: ConcurrentHashMap[String, String] = new ConcurrentHashMap()
+    val handlerRegistered: AtomicBoolean               = new AtomicBoolean(false)
+    val eagerEvaluatorRegistered: AtomicBoolean        = new AtomicBoolean(false)
 
-    def setChannelCount(count: Int): Unit                     = channelCount = Some(count)
-    def setPageCacheSizeBytes(value: Long): Unit              = pageCache = Some(value)
-    def setObjectCacheSizeBytes(value: Long): Unit            = objectCache = Some(value)
-    def enableOffHeapPageStore(): Unit                        = offHeap = true
-    def setCompression(value: String): Unit                   = compression = Some(value)
-    def setEncryptionKey(value: Array[Byte]): Unit            = encryption = Some(value)
-    def setBackupDirectory(path: String): Unit                = backupDir = Some(path)
-    def setBackupTruncationDirectory(path: String): Unit      = truncationDir = Some(path)
-    def setBackupDeletionDirectory(path: String): Unit        = deletionDir = Some(path)
+    def setChannelCount(count: Int): Unit                          = channelCount = Some(count)
+    def setPageCacheSizeBytes(value: Long): Unit                   = pageCache = Some(value)
+    def setObjectCacheSizeBytes(value: Long): Unit                 = objectCache = Some(value)
+    def enableOffHeapPageStore(): Unit                             = offHeap = true
+    def setCompression(value: String): Unit                        = compression = Some(value)
+    def setEncryptionKey(value: Array[Byte]): Unit                 = encryption = Some(value)
+    def setBackupDirectory(path: String): Unit                     = backupDir = Some(path)
+    def setBackupTruncationDirectory(path: String): Unit           = truncationDir = Some(path)
+    def setBackupDeletionDirectory(path: String): Unit             = deletionDir = Some(path)
     def setBackupConfigurationProperty(k: String, v: String): Unit =
       backupProps.put(k, v)
 
@@ -46,15 +46,16 @@ object PerformanceConfigSpec extends ZIOSpecDefault:
         new Object:
           def registerCustomTypeHandlers(handler: PersistenceTypeHandler[Binary, ?]): Unit =
             handlerRegistered.set(true)
-          def setReferenceFieldEagerEvaluator(eval: org.eclipse.serializer.persistence.types.PersistenceEagerStoringFieldEvaluator)
-              : Unit =
+          def setReferenceFieldEagerEvaluator(
+              eval: org.eclipse.serializer.persistence.types.PersistenceEagerStoringFieldEvaluator
+            ): Unit =
             eagerEvaluatorRegistered.set(true)
       )
 
   override def spec: Spec[TestEnvironment, Any] =
     suite("PerformanceConfig wiring")(
       test("applies performance and backup settings to foundation") {
-        val perf =
+        val perf       =
           StoragePerformanceConfig(
             channelCount = 8,
             pageCacheSizeBytes = Some(1024L),
@@ -63,7 +64,7 @@ object PerformanceConfigSpec extends ZIOSpecDefault:
             compression = CompressionSetting.LZ4,
             encryptionKey = Some(Array[Byte](1, 2, 3)),
           )
-        val config =
+        val config     =
           EclipseStoreConfig(
             storageTarget = StorageTarget.InMemory("perf-spec"),
             performance = perf,
@@ -94,7 +95,7 @@ object PerformanceConfigSpec extends ZIOSpecDefault:
       },
       test("merges backup target properties") {
         val foundation = new CapturingFoundation
-        val config = EclipseStoreConfig(
+        val config     = EclipseStoreConfig(
           storageTarget = StorageTarget.InMemory(),
           backupTarget = Some(
             BackupTarget.SqliteBackup(
@@ -113,17 +114,31 @@ object PerformanceConfigSpec extends ZIOSpecDefault:
       },
     )
 
-  private final class Dummy(var value: String)
+  final private class Dummy(var value: String)
   private object Dummy:
     val handler: org.eclipse.serializer.persistence.binary.types.BinaryTypeHandler[Dummy] =
-      org.eclipse.serializer.persistence.binary.types.Binary.TypeHandler(
-        classOf[Dummy],
-        org.eclipse.serializer.persistence.binary.types.Binary.Field(
-          classOf[String],
-          "value",
-          (d: Dummy) => d.value,
-          (d: Dummy, v: String) => d.value = v,
-        ),
-      )
+      org
+        .eclipse
+        .serializer
+        .persistence
+        .binary
+        .types
+        .Binary
+        .TypeHandler(
+          classOf[Dummy],
+          org
+            .eclipse
+            .serializer
+            .persistence
+            .binary
+            .types
+            .Binary
+            .Field(
+              classOf[String],
+              "value",
+              (d: Dummy) => d.value,
+              (d: Dummy, v: String) => d.value = v,
+            ),
+        )
 
   import scala.jdk.CollectionConverters.*

@@ -12,7 +12,11 @@ A ZIO-based library for type-safe, efficient, and boilerplate-free access to [Ec
 - **Streaming Persistence**: Stream keys/values and batch updates with `putAll`/`persistAll`
 - **GigaMap Module**: Advanced indexed maps with query DSL, CRUD, and persistence support
 - **Resource Safety**: ZIO's resource management ensures proper cleanup
-- **ZIO Schema Integration**: Schema-derived codecs for seamless serialization
+- **Custom Type Handlers & Blobs**: Register custom binary handlers for domain types and blobs
+- **Backup Targets & Import/Export**: Built-in backup configuration (SQLite/SQL/S3/FTP), import/export helpers
+- **Performance Tuning**: Configure channels, caches, compression, off-heap page store, encryption
+- **Lazy Loading & Eager Storing**: Lazy references/collections plus eager-field semantics via examples
+- **ZIO Config Integration**: Load `EclipseStoreConfig` from HOCON/resources via zio-config
 - **Effect-Oriented**: All operations are ZIO effects for composability
 
 ## Getting Started
@@ -22,8 +26,28 @@ Add the dependency to your `build.sbt`:
 ```scala
 libraryDependencies ++= Seq(
   "io.github.riccardomerolla" %% "zio-eclipsestore" % "0.1.0",
-  "io.github.riccardomerolla" %% "zio-eclipsestore-storage-sqlite" % "0.1.0" // Optional: for SQLite support
+  "io.github.riccardomerolla" %% "zio-eclipsestore-storage-sqlite" % "0.1.0" // Optional: for SQLite storage/backup
 )
+```
+
+Or load configuration with zio-config (HOCON/resource file):
+
+```scala
+import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfigZIO
+import zio.ConfigProvider
+
+val layer =
+  EclipseStoreConfigZIO
+    .fromResource("application.conf") // or fromFile(Paths.get("..."))
+    .map(_.toLayer)                    // provides EclipseStoreConfig
+    .orDie
+
+// application.conf example (partial)
+// eclipsestore {
+//   storage-target = "filesystem:/data/store"
+//   performance.channel-count = 8
+//   backup.directory = "/data/backup"
+// }
 ```
 
 ### Quick Example
@@ -216,6 +240,28 @@ for
 yield status
 ```
 
+#### Backup targets
+
+Configure external backup targets via `BackupTarget`:
+
+```scala
+import io.github.riccardomerolla.zio.eclipsestore.config.BackupTarget
+
+val config = EclipseStoreConfig(
+  storageTarget = StorageTarget.FileSystem(Paths.get("/data/mystore")),
+  backupTarget = Some(
+    BackupTarget.S3Backup(
+      accessKeyId = "key",
+      secretAccessKey = "secret",
+      region = "us-east-1",
+    )
+  ),
+  backupDirectory = Some(Paths.get("/data/backup")), // embedded backup dir
+)
+```
+
+Built-ins: `SqliteBackup`, generic `SqlBackup` (e.g., postgres/mysql), `S3Backup`, `FtpBackup`.
+
 ### Query API
 
 Execute type-safe queries:
@@ -239,6 +285,58 @@ val countUsers = Query.Custom[Int](
 )
 EclipseStoreService.execute(countUsers)
 ```
+
+### Performance Tuning
+
+Configure channels, caches, compression, off-heap page store, and encryption:
+
+```scala
+val perf = StoragePerformanceConfig(
+  channelCount = 8,
+  pageCacheSizeBytes = Some(512L * 1024 * 1024),
+  useOffHeapPageStore = true,
+  compression = CompressionSetting.LZ4,
+  encryptionKey = Some("secret-key".getBytes("UTF-8")),
+)
+
+val config = EclipseStoreConfig(
+  storageTarget = StorageTarget.FileSystem(Paths.get("/data/mystore")),
+  performance = perf,
+)
+```
+
+### Custom Type Handlers & Blobs
+
+Register custom binary handlers for domain classes or blobs:
+
+```scala
+import org.eclipse.serializer.persistence.binary.types.{ Binary, BinaryTypeHandler }
+
+final class Employee(var id: String, var salary: Double)
+
+val employeeHandler: BinaryTypeHandler[Employee] =
+  Binary.TypeHandler(
+    classOf[Employee],
+    Binary.Field_long("id", _.id.toLong, (e, v) => e.id = v.toString),
+    Binary.Field_double("salary", _.salary, (e, v) => e.salary = v),
+  )
+
+val config = EclipseStoreConfig(
+  storageTarget = StorageTarget.FileSystem(Paths.get("./data")),
+  customTypeHandlers = Chunk(employeeHandler),
+)
+```
+
+See `CustomTypeHandlerSpec` for blob/image handling.
+
+### Lazy Loading & Eager Storing
+
+- Lazy references/collections examples: see `LazyLoadingSpec`.
+- Eager storing example: Java `@StoreEager` annotation plus `EagerStoringExample`.
+
+### Import/Export
+
+Use `LifecycleCommand.Backup`, `exportData`, and `importData` helpers to move data between targets or directories.
 
 ## Development Workflow
 

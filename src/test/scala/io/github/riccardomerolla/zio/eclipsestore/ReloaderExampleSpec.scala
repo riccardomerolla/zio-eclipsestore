@@ -2,9 +2,10 @@ package io.github.riccardomerolla.zio.eclipsestore
 
 import zio.*
 import zio.test.*
-import io.github.riccardomerolla.zio.eclipsestore.examples.reloader.ReloaderExample
 
 import java.nio.file.Files
+
+import io.github.riccardomerolla.zio.eclipsestore.examples.reloader.ReloaderExample
 import scala.jdk.CollectionConverters.*
 
 object ReloaderExampleSpec extends ZIOSpecDefault:
@@ -13,8 +14,7 @@ object ReloaderExampleSpec extends ZIOSpecDefault:
     ZLayer.scoped {
       ZIO.acquireRelease(ZIO.attemptBlocking(Files.createTempDirectory("reloader-example")).orDie)(dir =>
         ZIO.attemptBlocking {
-          if Files.exists(dir) then
-            Files.walk(dir).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
+          if Files.exists(dir) then Files.walk(dir).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
         }.orDie
       )
     }
@@ -23,8 +23,7 @@ object ReloaderExampleSpec extends ZIOSpecDefault:
     suite("Reloader example")(
       test("reload restores cleared collection") {
         ZIO.serviceWithZIO[java.nio.file.Path] { dir =>
-          for
-            values <- ReloaderExample.runExample(dir)
+          for values <- ReloaderExample.runExample(dir)
           yield assertTrue(values == List("value 1", "value 2"))
         }
       }.provideLayerShared(tempDirLayer)

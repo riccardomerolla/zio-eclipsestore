@@ -7,10 +7,10 @@ import java.nio.file.{ Files, Path }
 import java.util.Comparator
 
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
-import scala.jdk.CollectionConverters.*
 import io.github.riccardomerolla.zio.eclipsestore.domain.{ Query, RootDescriptor }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand, LifecycleStatus }
 import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 
 object EclipseStoreServiceSpec extends ZIOSpecDefault:
 
@@ -183,17 +183,17 @@ object EclipseStoreServiceSpec extends ZIOSpecDefault:
       test("maintenance backup copies files into target directory") {
         ZIO.scoped {
           for
-            primary <- ZIO.attemptBlocking(Files.createTempDirectory("primary-store"))
-            backup  <- ZIO.attemptBlocking(Files.createTempDirectory("backup-store"))
-            _       <- ZIO.addFinalizer(ZIO.attemptBlocking {
-                           deleteDirectory(primary)
-                           deleteDirectory(backup)
-                         }.orDie)
-            layer    = liveLayer(primary)
-            _       <- (for
-                          _ <- EclipseStoreService.put("bk-key", "bk-val")
-                          _ <- EclipseStoreService.maintenance(LifecycleCommand.Backup(backup))
-                        yield ()).provideLayer(layer)
+            primary     <- ZIO.attemptBlocking(Files.createTempDirectory("primary-store"))
+            backup      <- ZIO.attemptBlocking(Files.createTempDirectory("backup-store"))
+            _           <- ZIO.addFinalizer(ZIO.attemptBlocking {
+                             deleteDirectory(primary)
+                             deleteDirectory(backup)
+                           }.orDie)
+            layer        = liveLayer(primary)
+            _           <- (for
+                             _ <- EclipseStoreService.put("bk-key", "bk-val")
+                             _ <- EclipseStoreService.maintenance(LifecycleCommand.Backup(backup))
+                           yield ()).provideLayer(layer)
             backupFiles <- ZIO.attemptBlocking {
                              Files.walk(backup).iterator().asScala.count(Files.isRegularFile(_))
                            }

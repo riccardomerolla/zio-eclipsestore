@@ -3,22 +3,22 @@ package io.github.riccardomerolla.zio.eclipsestore
 import zio.*
 import zio.test.*
 
-import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
-import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
-import org.eclipse.serializer.persistence.binary.types.{ Binary, BinaryTypeHandler }
-
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.nio.file.{ Files, Path }
 import java.time.Instant
 import javax.imageio.ImageIO
+
+import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
+import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
+import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
+import org.eclipse.serializer.persistence.binary.types.{ Binary, BinaryTypeHandler }
 import scala.jdk.CollectionConverters.*
 
 object CustomTypeHandlerSpec extends ZIOSpecDefault:
 
-  private final class Employee(var id: String, var salary: Double, var dateOfBirth: Instant)
+  final private class Employee(var id: String, var salary: Double, var dateOfBirth: Instant)
 
   private object Employee:
     val typeHandler: BinaryTypeHandler[Employee] =
@@ -33,7 +33,7 @@ object CustomTypeHandlerSpec extends ZIOSpecDefault:
         Binary.Field_double("salary", (e: Employee) => e.salary, (e: Employee, v: Double) => e.salary = v),
       )
 
-  private final class ImageBlob(var image: BufferedImage)
+  final private class ImageBlob(var image: BufferedImage)
 
   private object ImageBlob:
     private def toBytes(image: BufferedImage): Array[Byte] =
@@ -64,7 +64,7 @@ object CustomTypeHandlerSpec extends ZIOSpecDefault:
       val layer = ZLayer.succeed(cfg) >>> EclipseStoreService.live
       for
         env <- layer.build
-        svc = env.get[EclipseStoreService]
+        svc  = env.get[EclipseStoreService]
         out <- use(svc)
       yield out
     }
@@ -73,8 +73,7 @@ object CustomTypeHandlerSpec extends ZIOSpecDefault:
     ZLayer.scoped {
       ZIO.acquireRelease(ZIO.attempt(Files.createTempDirectory("custom-handlers")))(path =>
         ZIO.attempt {
-          if Files.exists(path) then
-            Files.walk(path).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
+          if Files.exists(path) then Files.walk(path).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
         }.orDie
       )
     }
@@ -95,20 +94,21 @@ object CustomTypeHandlerSpec extends ZIOSpecDefault:
 
         ZIO.serviceWithZIO[Path] { dir =>
           for {
-            results <- withService(dir) { svc =>
-                         for {
-                           _      <- svc.put("employee", employee)
-                           _      <- svc.put("logo", image)
-                           empOpt <- svc.get[String, Employee]("employee")
-                           imgOpt <- svc.get[String, ImageBlob]("logo")
-                         } yield (empOpt, imgOpt)
-                       }
+            results         <- withService(dir) { svc =>
+                                 for {
+                                   _      <- svc.put("employee", employee)
+                                   _      <- svc.put("logo", image)
+                                   empOpt <- svc.get[String, Employee]("employee")
+                                   imgOpt <- svc.get[String, ImageBlob]("logo")
+                                 } yield (empOpt, imgOpt)
+                               }
             (empOpt, imgOpt) = results
-            _ <- ZIO.logInfo(s"image result: $imgOpt")
-            empOk = empOpt.exists(e =>
-              e.id == "42" && math.abs(e.salary - 99.5d) < 0.0001 && e.dateOfBirth == Instant.ofEpochMilli(1_000L)
-            )
-            imgOk = imgOpt.exists(_.image != null)
+            _               <- ZIO.logInfo(s"image result: $imgOpt")
+            empOk            =
+              empOpt.exists(e =>
+                e.id == "42" && math.abs(e.salary - 99.5d) < 0.0001 && e.dateOfBirth == Instant.ofEpochMilli(1_000L)
+              )
+            imgOk            = imgOpt.exists(_.image != null)
           } yield assertTrue(empOk, imgOk)
         }
       }.provideLayerShared(tempDirLayer)

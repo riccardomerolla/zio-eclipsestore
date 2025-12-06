@@ -2,9 +2,10 @@ package io.github.riccardomerolla.zio.eclipsestore
 
 import zio.*
 import zio.test.*
-import io.github.riccardomerolla.zio.eclipsestore.examples.deleting.DeletingExample
 
 import java.nio.file.Files
+
+import io.github.riccardomerolla.zio.eclipsestore.examples.deleting.DeletingExample
 import scala.jdk.CollectionConverters.*
 
 object DeletingExampleSpec extends ZIOSpecDefault:
@@ -13,8 +14,7 @@ object DeletingExampleSpec extends ZIOSpecDefault:
     ZLayer.scoped {
       ZIO.acquireRelease(ZIO.attemptBlocking(Files.createTempDirectory("deleting-example")).orDie)(dir =>
         ZIO.attemptBlocking {
-          if Files.exists(dir) then
-            Files.walk(dir).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
+          if Files.exists(dir) then Files.walk(dir).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
         }.orDie
       )
     }

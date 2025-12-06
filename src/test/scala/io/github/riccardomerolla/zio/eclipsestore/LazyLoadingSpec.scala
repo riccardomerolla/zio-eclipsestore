@@ -3,17 +3,17 @@ package io.github.riccardomerolla.zio.eclipsestore
 import zio.*
 import zio.test.*
 
+import java.nio.file.Files
+import java.time.Instant
+import java.util.{ ArrayList, Iterator as JIterator, List as JList }
+import java.util.concurrent.ConcurrentHashMap
+
 import io.github.riccardomerolla.zio.eclipsestore.LazyHelpers
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
-
-import java.nio.file.Files
-import java.time.Instant
-import java.util.concurrent.ConcurrentHashMap
-import java.util.{ ArrayList, Iterator as JIterator, List as JList }
-import scala.jdk.CollectionConverters.*
 import org.eclipse.serializer.reference.Lazy
+import scala.jdk.CollectionConverters.*
 
 object LazyLoadingSpec extends ZIOSpecDefault:
 
@@ -54,44 +54,51 @@ object LazyLoadingSpec extends ZIOSpecDefault:
         manager.register(ref1)
         manager.register(ref2)
         val buffer    = scala.collection.mutable.ListBuffer.empty[Lazy[?]]
-        manager.iterate(new java.util.function.Consumer[Lazy[?]]:
-          override def accept(t: Lazy[?]): Unit = buffer += t
+        manager.iterate(
+          new java.util.function.Consumer[Lazy[?]]:
+            override def accept(t: Lazy[?]): Unit = buffer += t
         )
         val collected = buffer.size
         assertTrue(collected == 2)
       },
       test("Lazy reference clear resets loaded state and touched timestamp") {
-        val ref        = LazyHelpers.reference("to-clear")
-        val touched    = ref.lastTouched()
-        val value      = ref.get()
-        val afterGet   = ref.lastTouched()
+        val ref      = LazyHelpers.reference("to-clear")
+        val touched  = ref.lastTouched()
+        val value    = ref.get()
+        val afterGet = ref.lastTouched()
         assertTrue(
           value == "to-clear",
           afterGet >= touched,
-          LazyHelpers.isLoaded(ref)
+          LazyHelpers.isLoaded(ref),
         )
       },
       test("lazy list survives reload and loads on demand") {
         ZIO.scoped {
           for
-            dir <- ZIO.attemptBlocking(Files.createTempDirectory("lazy-root"))
-            _   <- ZIO.addFinalizer(ZIO.attemptBlocking(Files.walk(dir).sorted(java.util.Comparator.reverseOrder()).forEach(Files.delete)).ignore)
-            layer = ZLayer.succeed(EclipseStoreConfig(storageTarget = StorageTarget.FileSystem(dir))) >>> EclipseStoreService.live
+            dir           <- ZIO.attemptBlocking(Files.createTempDirectory("lazy-root"))
+            _             <- ZIO.addFinalizer(
+                               ZIO
+                                 .attemptBlocking(Files.walk(dir).sorted(java.util.Comparator.reverseOrder()).forEach(Files.delete))
+                                 .ignore
+                             )
+            layer          = ZLayer.succeed(
+                               EclipseStoreConfig(storageTarget = StorageTarget.FileSystem(dir))
+                             ) >>> EclipseStoreService.live
             rootDescriptor = RootDescriptor(
-              id = "lazy-root",
-              initializer = () => new ConcurrentHashMap[Int, BusinessYear](),
-            )
-            _ <- (for
-                    root <- EclipseStoreService.root(rootDescriptor)
-                    year  = root.computeIfAbsent(2023, _ => new BusinessYear())
-                    _     = year.add(Turnover(100.0, Instant.EPOCH))
-                    _    <- EclipseStoreService.persist(root)
-                  yield ()).provideLayer(layer)
-            reloaded <- (for
-                           root <- EclipseStoreService.root(rootDescriptor)
-                           year  = root.get(2023)
-                           data  = Option(year).toList.flatMap(_.stream.toList)
-                         yield data).provideLayer(layer)
+                               id = "lazy-root",
+                               initializer = () => new ConcurrentHashMap[Int, BusinessYear](),
+                             )
+            _             <- (for
+                               root <- EclipseStoreService.root(rootDescriptor)
+                               year  = root.computeIfAbsent(2023, _ => new BusinessYear())
+                               _     = year.add(Turnover(100.0, Instant.EPOCH))
+                               _    <- EclipseStoreService.persist(root)
+                             yield ()).provideLayer(layer)
+            reloaded      <- (for
+                               root <- EclipseStoreService.root(rootDescriptor)
+                               year  = root.get(2023)
+                               data  = Option(year).toList.flatMap(_.stream.toList)
+                             yield data).provideLayer(layer)
           yield assertTrue(reloaded.nonEmpty, reloaded.head.amount == 100.0)
         }
       },

@@ -28,10 +28,10 @@ object BackupTarget:
     ) extends BackupTarget:
     override def toProperties: Map[String, String] =
       Map(
-        "backup-filesystem.aws.s3.credentials.type"          -> "static",
-        "backup-filesystem.aws.s3.credentials.access-key-id" -> accessKeyId,
+        "backup-filesystem.aws.s3.credentials.type"              -> "static",
+        "backup-filesystem.aws.s3.credentials.access-key-id"     -> accessKeyId,
         "backup-filesystem.aws.s3.credentials.secret-access-key" -> secretAccessKey,
-        "backup-filesystem.aws.s3.credentials.region"        -> region,
+        "backup-filesystem.aws.s3.credentials.region"            -> region,
       ) ++ sessionToken.map("backup-filesystem.aws.s3.credentials.session-token" -> _)
 
   /** Generic SQL backup target allowing provider prefix (e.g., postgres, mysql). */
@@ -43,7 +43,7 @@ object BackupTarget:
       schema: Option[String] = None,
       extra: Map[String, String] = Map.empty,
     ) extends BackupTarget:
-    private val prefix = s"backup-filesystem.sql.$provider."
+    private val prefix                             = s"backup-filesystem.sql.$provider."
     override def toProperties: Map[String, String] =
       Map(prefix + "url" -> url) ++
         dataSourceProvider.map(prefix + "data-source-provider" -> _) ++
@@ -62,8 +62,8 @@ object BackupTarget:
     ) extends BackupTarget:
     override def toProperties: Map[String, String] =
       Map(
-        "backup-filesystem.ftp.host"        -> host,
-        "backup-filesystem.ftp.secure"      -> secure.toString,
+        "backup-filesystem.ftp.host"   -> host,
+        "backup-filesystem.ftp.secure" -> secure.toString,
       ) ++ user.map("backup-filesystem.ftp.user" -> _) ++
         password.map("backup-filesystem.ftp.password" -> _) ++
         port.map(p => "backup-filesystem.ftp.port" -> p.toString) ++

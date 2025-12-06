@@ -8,6 +8,7 @@ import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor.concurrentMap
 import org.eclipse.serializer.persistence.binary.types.Binary
 import org.eclipse.serializer.persistence.types.PersistenceTypeHandler
+import org.eclipse.serializer.persistence.types.PersistenceEagerStoringFieldEvaluator
 import org.eclipse.store.storage.embedded.types.EmbeddedStorageFoundation
 
 /** Storage target supported by EclipseStore */
@@ -83,6 +84,7 @@ final case class EclipseStoreConfig(
     backupDeletionDirectory: Option[Path] = None,
     backupExternalProperties: Map[String, String] = Map.empty,
     customTypeHandlers: Chunk[PersistenceTypeHandler[Binary, ?]] = Chunk.empty,
+    eagerStoringEvaluator: Option[PersistenceEagerStoringFieldEvaluator] = None,
   )
 
 object EclipseStoreConfig:

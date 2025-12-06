@@ -574,16 +574,29 @@ object EclipseStoreService:
           .backupTruncationDirectory
           .foreach(dir => invokeIfExists("setBackupTruncationDirectory", Seq(dir.toString)))
         config.backupDeletionDirectory.foreach(dir => invokeIfExists("setBackupDeletionDirectory", Seq(dir.toString)))
-        config.backupExternalProperties.foreach {
-          case (k, v) =>
-            invokeIfExists("setBackupConfigurationProperty", Seq(k, v))
-        }
+        applyBackupConfiguration(foundation, config.backupExternalProperties)
         if config.customTypeHandlers.nonEmpty then
           foundation.onConnectionFoundation(cf =>
             config.customTypeHandlers.foreach(handler => cf.registerCustomTypeHandlers(handler))
           )
+        config.eagerStoringEvaluator.foreach { eval =>
+          foundation.onConnectionFoundation(cf => cf.setReferenceFieldEagerEvaluator(eval))
+        }
       }
       .mapError(e => EclipseStoreError.InitializationError("Failed to apply storage configuration", Some(e)))
+
+  private[eclipsestore] def applyBackupConfiguration(
+      target: AnyRef,
+      properties: Map[String, String],
+    ): Unit =
+    def invoke(name: String, args: Seq[AnyRef]): Unit =
+      target.getClass.getMethods.find(m => m.getName == name && m.getParameterCount == args.length).foreach { m =>
+        m.invoke(target, args*)
+      }
+
+    properties.foreach { case (k, v) =>
+      invoke("setBackupConfigurationProperty", Seq(k, v))
+    }
 
   /** Test implementation that uses an in-memory map */
   def inMemory: ULayer[EclipseStoreService] =

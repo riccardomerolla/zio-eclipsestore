@@ -110,6 +110,7 @@ object EclipseStoreConfigZIO:
       backupDeletionDirectory = in.backupDeletionDirectory,
       backupExternalProperties = in.backupExternalProperties.getOrElse(Map.empty),
       customTypeHandlers = defaults.customTypeHandlers,
+      eagerStoringEvaluator = defaults.eagerStoringEvaluator,
     )
 
   val fromResourcePath: ZLayer[Any, zio.Config.Error, EclipseStoreConfig] =

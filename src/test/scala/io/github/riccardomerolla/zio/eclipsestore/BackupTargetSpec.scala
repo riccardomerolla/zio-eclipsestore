@@ -49,5 +49,42 @@ object BackupTargetSpec extends ZIOSpecDefault:
           props("backup-filesystem.aws.s3.credentials.region") == "us-east-1",
           props("backup-filesystem.aws.s3.credentials.session-token") == "token",
         )
+      },
+      test("builds properties for generic SQL backup target (postgres)") {
+        val target = BackupTarget.SqlBackup(
+          provider = "postgres",
+          url = "jdbc:postgresql://localhost/db",
+          dataSourceProvider = Some("com.foo.DSProvider"),
+          catalog = Some("cat"),
+          schema = Some("public"),
+          extra = Map("ssl" -> "true"),
+        )
+        val props = target.toProperties
+        assertTrue(
+          props("backup-filesystem.sql.postgres.url") == "jdbc:postgresql://localhost/db",
+          props("backup-filesystem.sql.postgres.data-source-provider") == "com.foo.DSProvider",
+          props("backup-filesystem.sql.postgres.catalog") == "cat",
+          props("backup-filesystem.sql.postgres.schema") == "public",
+          props("backup-filesystem.sql.postgres.ssl") == "true",
+        )
+      },
+      test("builds properties for FTP backup target") {
+        val target = BackupTarget.FtpBackup(
+          host = "ftp.example.com",
+          user = Some("user"),
+          password = Some("pass"),
+          port = Some(21),
+          basePath = Some("/backups"),
+          secure = true,
+        )
+        val props = target.toProperties
+        assertTrue(
+          props("backup-filesystem.ftp.host") == "ftp.example.com",
+          props("backup-filesystem.ftp.user") == "user",
+          props("backup-filesystem.ftp.password") == "pass",
+          props("backup-filesystem.ftp.port") == "21",
+          props("backup-filesystem.ftp.base-path") == "/backups",
+          props("backup-filesystem.ftp.secure") == "true",
+        )
       }
     )

@@ -68,3 +68,10 @@ object ReplAppSpec extends ZIOSpecDefault:
         }
       },
     )
+      ,
+      test("insert rejects malformed payload") {
+        scenario(List(Action.Insert("bad-payload-without-fields"))) {
+          for results <- ReplApp.runAction(Action.ListBooks)
+          yield assertTrue(results.isEmpty)
+        }
+      }

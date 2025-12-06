@@ -99,7 +99,7 @@ object ReplApp extends ZIOAppDefault:
 
   private val layer =
     configLayer >>>
-      EclipseStoreService.live.mapError(e => new RuntimeException(e.toString)) >>>
+      EclipseStoreService.live.mapError(e => GigaMapError.StorageFailure("Failed to init store", None)) >>>
       GigaMap.make(bookMapDefinition).orDie
 
   private val cliCommand =

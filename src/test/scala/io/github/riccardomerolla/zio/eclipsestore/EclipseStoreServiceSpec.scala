@@ -200,6 +200,16 @@ object EclipseStoreServiceSpec extends ZIOSpecDefault:
           yield assertTrue(backupFiles > 0)
         }
       },
+      test("fails initialization when storage path is a file") {
+        ZIO.scoped {
+          for
+            tmpFile <- ZIO.attemptBlocking(Files.createTempFile("eclipsestore-file-path", ".tmp"))
+            _       <- ZIO.addFinalizer(ZIO.attemptBlocking(Files.deleteIfExists(tmpFile)).orDie)
+            layer    = liveLayer(tmpFile)
+            result  <- EclipseStoreService.put("bad", "path").provideLayer(layer).either
+          yield assertTrue(result.isLeft)
+        }
+      },
       test("exports and imports storage contents") {
         ZIO.scoped {
           for

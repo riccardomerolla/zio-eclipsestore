@@ -7,7 +7,7 @@ import java.nio.file.Paths
 
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.http.BookRoutes
-import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.BookRepository
+import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.{ BookRepository, BookRepositoryError }
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
 object BookstoreServer extends ZIOAppDefault:
@@ -18,9 +18,9 @@ object BookstoreServer extends ZIOAppDefault:
   private val repositoryLayer: ZLayer[Any, Nothing, BookRepository] =
     (
       EclipseStoreConfig.layer(Paths.get("bookstore-data")) >>>
-        EclipseStoreService.live.mapError(e => new RuntimeException(e.toString)) >>>
+        EclipseStoreService.live.mapError(err => BookRepositoryError.StorageFailure(err.toString)).orDie >>>
         BookRepository.live
-    ).orDie
+    )
 
   override def run: URIO[ZIOAppArgs & Scope, Any] =
     Server

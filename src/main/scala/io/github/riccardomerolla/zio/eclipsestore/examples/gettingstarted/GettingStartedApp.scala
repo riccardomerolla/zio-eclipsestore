@@ -32,4 +32,4 @@ object GettingStartedApp extends ZIOAppDefault:
         EclipseStoreConfig.temporaryLayer,
         EclipseStoreService.live,
       )
-      .orDieWith(e => new RuntimeException(e.toString))
+      .catchAll(e => ZIO.logError(e.toString))

@@ -12,6 +12,8 @@ import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
 object BookRoutesSpec extends ZIOSpecDefault:
 
+  final case class JsonDecodeError(message: String) extends Exception(message)
+
   private val repoLayer: ULayer[BookRepository] =
     EclipseStoreService.inMemory >>> BookRepository.live
 
@@ -31,7 +33,7 @@ object BookRoutesSpec extends ZIOSpecDefault:
           createResponse <- run(Request.post("/books", Body.fromString(payload)))
           listResponse   <- run(Request.get("/books"))
           body           <- bodyText(listResponse)
-          books          <- ZIO.fromEither(body.fromJson[List[Book]].left.map(new RuntimeException(_)))
+          books          <- ZIO.fromEither(body.fromJson[List[Book]].left.map(JsonDecodeError.apply))
         yield assertTrue(
           createResponse.status == Status.Ok,
           books.nonEmpty,
@@ -40,5 +42,12 @@ object BookRoutesSpec extends ZIOSpecDefault:
       test("returns 404 when book is missing") {
         for response <- run(Request.get("/books/00000000-0000-0000-0000-000000000000"))
         yield assertTrue(response.status == Status.NotFound)
+      },
+      test("returns 400 on invalid json payload") {
+        val badPayload = """{ "title": 123, "author": "bad", "price": "oops" }"""
+        for
+          response <- run(Request.post("/books", Body.fromString(badPayload)))
+          body     <- bodyText(response)
+        yield assertTrue(response.status == Status.BadRequest, body.nonEmpty)
       },
     ).provideLayer(Scope.default ++ repoLayer)

@@ -10,6 +10,7 @@ import java.util.Comparator
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.config.*
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.domain.GigaMapQuery
+import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.service.GigaMap
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
@@ -32,10 +33,10 @@ object GigaMapSpec extends ZIOSpecDefault:
 
   private def persistentLayer(path: Path): ZLayer[Any, Nothing, GigaMap[Int, Account]] =
     ZLayer.succeed(EclipseStoreConfig.make(path)) >>>
-      EclipseStoreService.live.mapError(e => new RuntimeException(e.toString)).orDie >>>
+      EclipseStoreService.live.mapError(e => GigaMapError.StorageFailure("Failed to init store", None)) >>>
       GigaMap
         .make[Int, Account](definition.copy(name = "persist-accounts", autoPersist = true))
-        .mapError(e => new RuntimeException(e.toString))
+        .mapError(identity)
         .orDie
 
   private def withMap[E, A](f: GigaMap[Int, Account] => ZIO[Any, E, A]): ZIO[GigaMap[Int, Account], E, A] =

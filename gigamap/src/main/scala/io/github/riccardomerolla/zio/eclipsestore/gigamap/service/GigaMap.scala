@@ -172,7 +172,7 @@ final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[
       baseTargets ++ indexMaps ++ indexBuckets
     store
       .persistAll[AnyRef](targets)
-      .mapError(e => StorageFailure("Failed to persist GigaMap state", Some(new RuntimeException(e.toString))))
+      .mapError(e => StorageFailure("Failed to persist GigaMap state", Some(e)))
 
   private def attempt[A](thunk: => A): IO[GigaMapError, A] =
     ZIO.attempt(thunk).mapError(e => StorageFailure("GigaMap operation failed", Some(e)))

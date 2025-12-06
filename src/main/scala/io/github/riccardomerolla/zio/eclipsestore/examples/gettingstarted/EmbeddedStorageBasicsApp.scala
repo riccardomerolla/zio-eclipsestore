@@ -45,7 +45,7 @@ object EmbeddedStorageBasicsApp extends ZIOAppDefault:
         EclipseStoreConfig.temporaryLayer,
         EclipseStoreService.live,
       )
-      .orDieWith(e => new RuntimeException(e.toString))
+      .catchAll(e => ZIO.logError(e.toString))
 
   private def putUser(directory: UserDirectory, user: User): ZIO[EclipseStoreService, EclipseStoreError, Unit] =
     for

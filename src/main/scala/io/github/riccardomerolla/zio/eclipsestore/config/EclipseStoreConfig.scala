@@ -83,6 +83,7 @@ final case class EclipseStoreConfig(
     backupTruncationDirectory: Option[Path] = None,
     backupDeletionDirectory: Option[Path] = None,
     backupExternalProperties: Map[String, String] = Map.empty,
+    backupTarget: Option[BackupTarget] = None,
     customTypeHandlers: Chunk[PersistenceTypeHandler[Binary, ?]] = Chunk.empty,
     eagerStoringEvaluator: Option[PersistenceEagerStoringFieldEvaluator] = None,
   )

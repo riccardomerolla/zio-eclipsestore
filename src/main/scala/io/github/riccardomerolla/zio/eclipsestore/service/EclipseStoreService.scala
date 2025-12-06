@@ -574,7 +574,9 @@ object EclipseStoreService:
           .backupTruncationDirectory
           .foreach(dir => invokeIfExists("setBackupTruncationDirectory", Seq(dir.toString)))
         config.backupDeletionDirectory.foreach(dir => invokeIfExists("setBackupDeletionDirectory", Seq(dir.toString)))
-        applyBackupConfiguration(foundation, config.backupExternalProperties)
+        val backupProps =
+          config.backupExternalProperties ++ config.backupTarget.map(_.toProperties).getOrElse(Map.empty)
+        applyBackupConfiguration(foundation, backupProps)
         if config.customTypeHandlers.nonEmpty then
           foundation.onConnectionFoundation(cf =>
             config.customTypeHandlers.foreach(handler => cf.registerCustomTypeHandlers(handler))

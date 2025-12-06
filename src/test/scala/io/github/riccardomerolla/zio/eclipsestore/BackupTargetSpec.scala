@@ -3,6 +3,7 @@ package io.github.riccardomerolla.zio.eclipsestore
 import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
+import io.github.riccardomerolla.zio.eclipsestore.config.BackupTarget
 
 object BackupTargetSpec extends ZIOSpecDefault:
 
@@ -17,5 +18,36 @@ object BackupTargetSpec extends ZIOSpecDefault:
         val fake = FakeFoundation()
         EclipseStoreService.applyBackupConfiguration(fake, Map("backup-filesystem.sql.url" -> "jdbc:sqlite:bk.db"))
         assertTrue(fake.received.contains("backup-filesystem.sql.url" -> "jdbc:sqlite:bk.db"))
+      },
+      test("builds properties for sqlite backup target") {
+        val target = BackupTarget.SqliteBackup(
+          url = "jdbc:sqlite:eclipsestore_bkup_db",
+          dataSourceProvider = Some("com.sample.MyDataSourceProvider"),
+          catalog = Some("mycatalog"),
+          schema = Some("myschema"),
+        )
+        val props = target.toProperties
+        assertTrue(
+          props("backup-filesystem.sql.sqlite.url") == "jdbc:sqlite:eclipsestore_bkup_db",
+          props("backup-filesystem.sql.sqlite.data-source-provider") == "com.sample.MyDataSourceProvider",
+          props("backup-filesystem.sql.sqlite.catalog") == "mycatalog",
+          props("backup-filesystem.sql.sqlite.schema") == "myschema",
+        )
+      },
+      test("builds properties for S3 backup target") {
+        val target = BackupTarget.S3Backup(
+          accessKeyId = "id",
+          secretAccessKey = "secret",
+          region = "us-east-1",
+          sessionToken = Some("token"),
+        )
+        val props = target.toProperties
+        assertTrue(
+          props("backup-filesystem.aws.s3.credentials.type") == "static",
+          props("backup-filesystem.aws.s3.credentials.access-key-id") == "id",
+          props("backup-filesystem.aws.s3.credentials.secret-access-key") == "secret",
+          props("backup-filesystem.aws.s3.credentials.region") == "us-east-1",
+          props("backup-filesystem.aws.s3.credentials.session-token") == "token",
+        )
       }
     )

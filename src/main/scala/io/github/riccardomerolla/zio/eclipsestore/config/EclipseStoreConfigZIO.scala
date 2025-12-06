@@ -109,6 +109,7 @@ object EclipseStoreConfigZIO:
       backupTruncationDirectory = in.backupTruncationDirectory,
       backupDeletionDirectory = in.backupDeletionDirectory,
       backupExternalProperties = in.backupExternalProperties.getOrElse(Map.empty),
+      backupTarget = defaults.backupTarget,
       customTypeHandlers = defaults.customTypeHandlers,
       eagerStoringEvaluator = defaults.eagerStoringEvaluator,
     )

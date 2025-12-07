@@ -37,6 +37,10 @@ jobs:
         run: |
           sbt scalafmtCheckAll
           sbt test
+          sbt "project gigamap" scalafmtCheckAll
+          sbt "project gigamap" test
+          sbt "project storageSqlite" scalafmtCheckAll
+          sbt "project storageSqlite" test
 
   publish:
     name: Publish to Maven Central

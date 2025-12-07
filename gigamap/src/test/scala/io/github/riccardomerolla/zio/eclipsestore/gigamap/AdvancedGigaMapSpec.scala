@@ -3,14 +3,14 @@ package io.github.riccardomerolla.zio.eclipsestore.gigamap
 import zio.*
 import zio.test.*
 
+import java.nio.file.Files
+import java.time.LocalDate
+
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.config.{ GigaMapDefinition, GigaMapIndex }
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.domain.GigaMapQuery
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.service.GigaMap
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
-
-import java.time.LocalDate
-import java.nio.file.Files
 import scala.jdk.CollectionConverters.*
 
 object AdvancedGigaMapSpec extends ZIOSpecDefault:
@@ -54,7 +54,7 @@ object AdvancedGigaMapSpec extends ZIOSpecDefault:
 
   private def withGigaMap[A](f: GigaMap[Int, Person] => ZIO[Any, Throwable, A]) =
     ZIO.serviceWithZIO[java.nio.file.Path] { dir =>
-      val cfg = EclipseStoreConfig.make(dir)
+      val cfg   = EclipseStoreConfig.make(dir)
       val layer = ZLayer.succeed(cfg) >>> EclipseStoreService.live >>> GigaMap.make[Int, Person](definition)
       ZIO.scoped {
         layer.build.flatMap { env =>
@@ -69,12 +69,12 @@ object AdvancedGigaMapSpec extends ZIOSpecDefault:
       test("supports indexed queries similar to upstream basic example") {
         withGigaMap { gm =>
           for
-            _ <- gm.putAll(sample)
-            thomas <- gm.query(GigaMapQuery.ByIndex("firstName", "Thomas"))
+            _       <- gm.putAll(sample)
+            thomas  <- gm.query(GigaMapQuery.ByIndex("firstName", "Thomas"))
             germans <- gm.query(GigaMapQuery.ByIndex("country", "Germany"))
-            year99 <- gm.query(GigaMapQuery.ByIndex("birthYear", 1999))
+            year99  <- gm.query(GigaMapQuery.ByIndex("birthYear", 1999))
             lastSch <- gm.query(GigaMapQuery.Filter(p => p.lastName.contains("sch")))
-            sports <- gm.query(GigaMapQuery.ByIndex("interests", Interest.SPORTS))
+            sports  <- gm.query(GigaMapQuery.ByIndex("interests", Interest.SPORTS))
           yield assertTrue(
             thomas.map(_.firstName).toSet == Set("Thomas"),
             germans.size == 2,

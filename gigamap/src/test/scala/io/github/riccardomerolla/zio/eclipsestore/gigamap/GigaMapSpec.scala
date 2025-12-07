@@ -33,10 +33,9 @@ object GigaMapSpec extends ZIOSpecDefault:
 
   private def persistentLayer(path: Path): ZLayer[Any, Nothing, GigaMap[Int, Account]] =
     ZLayer.succeed(EclipseStoreConfig.make(path)) >>>
-      EclipseStoreService.live.mapError(e => GigaMapError.StorageFailure("Failed to init store", None)) >>>
+      EclipseStoreService.live.mapError(e => GigaMapError.StorageFailure("Failed to init store", None)).orDie >>>
       GigaMap
         .make[Int, Account](definition.copy(name = "persist-accounts", autoPersist = true))
-        .mapError(identity)
         .orDie
 
   private def withMap[E, A](f: GigaMap[Int, Account] => ZIO[Any, E, A]): ZIO[GigaMap[Int, Account], E, A] =

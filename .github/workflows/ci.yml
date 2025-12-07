@@ -80,7 +80,7 @@ jobs:
           SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
 
       - name: Publish gigamap to Maven Central
-        run: sbt --batch --no-colors "project gigamap" ci-release
+        run: rm -rf target/sona-staging && sbt --batch --no-colors "project gigamap" ci-release
         env:
           PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
           PGP_SECRET: ${{ secrets.PGP_SECRET }}
@@ -88,7 +88,7 @@ jobs:
           SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
 
       - name: Publish storage-sqlite to Maven Central
-        run: sbt --batch --no-colors "project storageSqlite" ci-release
+        run: rm -rf target/sona-staging && sbt --batch --no-colors "project storageSqlite" ci-release
         env:
           PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
           PGP_SECRET: ${{ secrets.PGP_SECRET }}

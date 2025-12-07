@@ -25,8 +25,9 @@ Add the dependency to your `build.sbt`:
 
 ```scala
 libraryDependencies ++= Seq(
-  "io.github.riccardomerolla" %% "zio-eclipsestore" % "0.1.0",
-  "io.github.riccardomerolla" %% "zio-eclipsestore-storage-sqlite" % "0.1.0" // Optional: for SQLite storage/backup
+  "io.github.riccardomerolla" %% "zio-eclipsestore" % "1.0.1",
+  "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % "1.0.1", // Optional: for GigaMap module
+  "io.github.riccardomerolla" %% "zio-eclipsestore-storage-sqlite" % "1.0.1" // Optional: for SQLite storage/backup
 )
 ```
 

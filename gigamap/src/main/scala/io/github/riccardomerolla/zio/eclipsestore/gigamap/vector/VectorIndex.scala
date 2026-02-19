@@ -17,8 +17,8 @@ trait VectorIndex[A]:
 
   /** Add or update an entity by its numeric id.
     *
-    * The embedding is extracted automatically via the [[Vectorizer]] supplied at index creation.
-    * Fails with [[VectorError.DimensionMismatch]] if the extracted embedding length does not match
+    * The embedding is extracted automatically via the [[Vectorizer]] supplied at index creation. Fails with
+    * [[VectorError.DimensionMismatch]] if the extracted embedding length does not match
     * [[VectorIndexConfig.dimension]].
     */
   def add(id: Long, entity: A): IO[VectorError, Unit]
@@ -29,8 +29,7 @@ trait VectorIndex[A]:
   /** Current number of indexed entities. */
   def size: IO[VectorError, Int]
 
-  /** Return the `k` nearest neighbours to `queryEmbedding`, ranked by similarity score
-    * (highest first).
+  /** Return the `k` nearest neighbours to `queryEmbedding`, ranked by similarity score (highest first).
     *
     * @param queryEmbedding
     *   The query vector; must have exactly [[VectorIndexConfig.dimension]] components.
@@ -40,23 +39,23 @@ trait VectorIndex[A]:
     *   When provided, only results with `score >= minScore` are included.
     */
   def search(
-      queryEmbedding: Chunk[Float],
-      k: Int,
-      minScore: Option[Float] = None,
-    ): IO[VectorError, List[VectorSearchResult[A]]]
+    queryEmbedding: Chunk[Float],
+    k: Int,
+    minScore: Option[Float] = None,
+  ): IO[VectorError, List[VectorSearchResult[A]]]
 
   /** Stream search results one element at a time; useful for large `k` or downstream processing.
     *
     * Equivalent to `ZStream.fromZIO(search(...)).flatMap(ZStream.fromIterable(_))`.
     */
   def searchStream(
-      queryEmbedding: Chunk[Float],
-      k: Int,
-    ): ZStream[Any, VectorError, VectorSearchResult[A]]
+    queryEmbedding: Chunk[Float],
+    k: Int,
+  ): ZStream[Any, VectorError, VectorSearchResult[A]]
 
   /** Flush in-memory state to the configured on-disk store.
     *
-    * No-op when `VectorIndexConfig.onDisk = false`. Background flushes are scheduled
-    * automatically if [[VectorIndexConfig.persistenceIntervalMs]] is set.
+    * No-op when `VectorIndexConfig.onDisk = false`. Background flushes are scheduled automatically if
+    * [[VectorIndexConfig.persistenceIntervalMs]] is set.
     */
   def persist: IO[VectorError, Unit]

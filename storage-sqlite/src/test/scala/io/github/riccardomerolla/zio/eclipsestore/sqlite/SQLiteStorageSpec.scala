@@ -1,11 +1,11 @@
 package io.github.riccardomerolla.zio.eclipsestore.sqlite
 
-import zio.*
-import zio.test.*
-
 import java.nio.file.{ Files, Path }
 import java.sql.DriverManager
 import java.util.Comparator
+
+import zio.*
+import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.StorageTarget
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
@@ -21,7 +21,7 @@ object SQLiteStorageSpec extends ZIOSpecDefault:
           .forEach(Files.delete)
     }.ignore
 
-  override def spec =
+  override def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
     suite("SQLiteStorage")(
       test("jdbc driver can create and read sqlite database") {
         ZIO.scoped {

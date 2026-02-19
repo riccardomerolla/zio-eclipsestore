@@ -1,10 +1,10 @@
 package io.github.riccardomerolla.zio.eclipsestore.gigamap
 
-import zio.*
-import zio.test.*
-
 import java.nio.file.{ Files, Path }
 import java.util.Comparator
+
+import zio.*
+import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.config.*
@@ -42,10 +42,10 @@ object GigaMapRestartSpec extends ZIOSpecDefault:
     ZIO.serviceWithZIO[GigaMap[Int, Person]](f)
 
   private def runWithLayer[E, A](
-      layer: ZLayer[Any, Nothing, GigaMap[Int, Person]]
-    )(
-      zio: ZIO[GigaMap[Int, Person], E, A]
-    ): ZIO[Any, E, A] =
+    layer: ZLayer[Any, Nothing, GigaMap[Int, Person]]
+  )(
+    zio: ZIO[GigaMap[Int, Person], E, A]
+  ): ZIO[Any, E, A] =
     ZIO.scoped {
       layer.build.flatMap(env => zio.provideEnvironment(env))
     }

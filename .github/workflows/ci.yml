@@ -35,11 +35,11 @@ jobs:
 
       - name: Check formatting and run tests
         run: |
-          sbt scalafmtCheckAll
+          sbt check
           sbt test
-          sbt "project gigamap" scalafmtCheckAll
+          sbt "project gigamap" check
           sbt "project gigamap" test
-          sbt "project storageSqlite" scalafmtCheckAll
+          sbt "project storageSqlite" check
           sbt "project storageSqlite" test
 
   publish:

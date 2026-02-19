@@ -7,12 +7,12 @@ import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 
 /** Root container that stores all GigaMap instances and their indexes. */
 final case class GigaMapRegistry(
-    maps: ConcurrentHashMap[String, ConcurrentHashMap[Any, Any]],
-    indexes: ConcurrentHashMap[
-      String,
-      ConcurrentHashMap[String, ConcurrentHashMap[Any, KeySetView[Any, java.lang.Boolean]]],
-    ],
-  ) extends Serializable:
+  maps: ConcurrentHashMap[String, ConcurrentHashMap[Any, Any]],
+  indexes: ConcurrentHashMap[
+    String,
+    ConcurrentHashMap[String, ConcurrentHashMap[Any, KeySetView[Any, java.lang.Boolean]]],
+  ],
+) extends Serializable:
 
   def mapFor(name: String): ConcurrentHashMap[Any, Any] =
     maps.computeIfAbsent(name, _ => new ConcurrentHashMap[Any, Any]())

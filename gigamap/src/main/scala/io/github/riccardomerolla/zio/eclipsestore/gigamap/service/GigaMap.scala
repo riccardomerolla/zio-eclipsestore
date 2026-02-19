@@ -1,16 +1,17 @@
 package io.github.riccardomerolla.zio.eclipsestore.gigamap.service
 
-import zio.*
-
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentHashMap.KeySetView
+
+import scala.jdk.CollectionConverters.*
+
+import zio.*
 
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.config.*
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.domain.*
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError.*
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
-import scala.jdk.CollectionConverters.*
 
 trait GigaMap[K, V]:
   def definition: GigaMapDefinition[K, V]
@@ -27,7 +28,7 @@ trait GigaMap[K, V]:
 
 object GigaMap:
   def make[K: Tag, V: Tag](definition: GigaMapDefinition[K, V])
-      : ZLayer[EclipseStoreService, GigaMapError, GigaMap[K, V]] =
+    : ZLayer[EclipseStoreService, GigaMapError, GigaMap[K, V]] =
     ZLayer.fromZIO {
       for
         service    <- ZIO.service[EclipseStoreService]
@@ -38,10 +39,10 @@ object GigaMap:
   given [K: Tag, V: Tag]: Tag[GigaMap[K, V]] = Tag.derived
 
 final private class GigaMapLive[K, V: Tag](
-    initialDefinition: GigaMapDefinition[K, V],
-    store: EclipseStoreService,
-    persistSem: Semaphore,
-  ) extends GigaMap[K, V]:
+  initialDefinition: GigaMapDefinition[K, V],
+  store: EclipseStoreService,
+  persistSem: Semaphore,
+) extends GigaMap[K, V]:
   override val definition: GigaMapDefinition[K, V] = initialDefinition
 
   private val registry: GigaMapRegistry =
@@ -121,9 +122,9 @@ final private class GigaMapLive[K, V: Tag](
 
   override def query[A](query: GigaMapQuery[V, A]): IO[GigaMapError, A] =
     query match
-      case GigaMapQuery.All()                     =>
+      case GigaMapQuery.All()                      =>
         entries.map(_.map(_._2)).asInstanceOf[IO[GigaMapError, A]]
-      case GigaMapQuery.Filter(predicate)         =>
+      case GigaMapQuery.Filter(predicate)          =>
         attempt {
           val matched = map
             .values()
@@ -132,13 +133,13 @@ final private class GigaMapLive[K, V: Tag](
             .filter(predicate)
           Chunk.fromIterable(matched)
         }.asInstanceOf[IO[GigaMapError, A]]
-      case GigaMapQuery.ByIndex(indexName, value) =>
+      case GigaMapQuery.ByIndex(indexName, value)  =>
         for result <- byIndex(indexName, value)
         yield result.asInstanceOf[A]
       case query: GigaMapQuery.VectorSimilarity[V] =>
         for result <- vectorSimilaritySearch(query.indexName, query.vector, query.limit, query.threshold)
         yield result.asInstanceOf[A]
-      case GigaMapQuery.Count()                   =>
+      case GigaMapQuery.Count()                    =>
         size.map(_.toLong).asInstanceOf[IO[GigaMapError, A]]
 
   override def persist: IO[GigaMapError, Unit] =
@@ -173,43 +174,46 @@ final private class GigaMapLive[K, V: Tag](
     }
 
   private def vectorSimilaritySearch(
-      indexName: String,
-      queryVector: Array[Float],
-      limit: Int,
-      threshold: Option[Float]
+    indexName: String,
+    queryVector: Array[Float],
+    limit: Int,
+    threshold: Option[Float],
   ): IO[GigaMapError, Chunk[V]] =
     for
-      vectorIndexOpt <- attempt { vectorIndexes.find(_.name == indexName) }
+      vectorIndexOpt <- attempt(vectorIndexes.find(_.name == indexName))
       vectorIndex    <- ZIO.fromOption(vectorIndexOpt).orElseFail(IndexNotDefined(indexName))
-      store          <- attempt { vectorStore.computeIfAbsent(indexName, _ => new ConcurrentHashMap[Any, Array[Float]]()) }
-      results <- attempt {
-        val scores = store.entrySet().asScala
-          .map { entry =>
-            val key    = entry.getKey
-            val vector = entry.getValue
-            val distance = cosineSimilarity(queryVector, vector)
-            (key, distance)
-          }
-          .filter { case (_, distance) =>
-            threshold.forall(t => distance >= t)
-          }
-          .toList
-          .sortBy { case (_, distance) => -distance } // Sort by distance descending
-          .take(limit)
-          .map { case (key, _) =>
-            Option(map.get(key)).map(_.asInstanceOf[V])
-          }
-          .flatten
-        Chunk.fromIterable(scores)
-      }
+      store          <- attempt(vectorStore.computeIfAbsent(indexName, _ => new ConcurrentHashMap[Any, Array[Float]]()))
+      results        <- attempt {
+                          val scores = store.entrySet().asScala
+                            .map { entry =>
+                              val key      = entry.getKey
+                              val vector   = entry.getValue
+                              val distance = cosineSimilarity(queryVector, vector)
+                              (key, distance)
+                            }
+                            .filter {
+                              case (_, distance) =>
+                                threshold.forall(t => distance >= t)
+                            }
+                            .toList
+                            .sortBy { case (_, distance) => -distance } // Sort by distance descending
+                            .take(limit)
+                            .map {
+                              case (key, _) =>
+                                Option(map.get(key)).map(_.asInstanceOf[V])
+                            }
+                            .flatten
+                          Chunk.fromIterable(scores)
+                        }
     yield results
 
   private def cosineSimilarity(vecA: Array[Float], vecB: Array[Float]): Float =
-    if (vecA.length != vecB.length) return 0f
-    val dotProduct = (vecA zip vecB).foldLeft(0f) { case (sum, (a, b)) => sum + (a * b) }
-    val magnitudeA = Math.sqrt(vecA.foldLeft(0f) { case (sum, a) => sum + (a * a) })
-    val magnitudeB = Math.sqrt(vecB.foldLeft(0f) { case (sum, b) => sum + (b * b) })
-    if (magnitudeA == 0 || magnitudeB == 0) 0f else (dotProduct / (magnitudeA * magnitudeB)).toFloat
+    if vecA.length != vecB.length then 0f
+    else
+      val dotProduct = (vecA zip vecB).foldLeft(0f) { case (sum, (a, b)) => sum + (a * b) }
+      val magnitudeA = Math.sqrt(vecA.foldLeft(0f) { case (sum, a) => sum + (a * a) })
+      val magnitudeB = Math.sqrt(vecB.foldLeft(0f) { case (sum, b) => sum + (b * b) })
+      if magnitudeA == 0 || magnitudeB == 0 then 0f else (dotProduct / (magnitudeA * magnitudeB)).toFloat
 
   private def updateIndexes(key: K, oldValue: Option[V], newValue: Option[V]): IO[GigaMapError, Unit] =
     attempt {

@@ -20,6 +20,6 @@ object VectorError:
 
   /** A low-level storage or computation failure. */
   final case class StorageFailure(message: String, cause: Option[Throwable] = None)
-      extends VectorError:
+    extends VectorError:
     override def getMessage: String         = message
     override def getCause: Throwable | Null = cause.orNull

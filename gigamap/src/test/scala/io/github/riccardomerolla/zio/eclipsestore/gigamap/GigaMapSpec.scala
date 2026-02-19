@@ -1,11 +1,10 @@
 package io.github.riccardomerolla.zio.eclipsestore.gigamap
 
-import zio.*
-import zio.Chunk
-import zio.test.*
-
 import java.nio.file.{ Files, Path }
 import java.util.Comparator
+
+import zio.test.*
+import zio.{ Chunk, * }
 
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.config.*
@@ -42,10 +41,10 @@ object GigaMapSpec extends ZIOSpecDefault:
     ZIO.serviceWithZIO[GigaMap[Int, Account]](f)
 
   private def runWithLayer[E, A](
-      layer: ZLayer[Any, Nothing, GigaMap[Int, Account]]
-    )(
-      zio: ZIO[GigaMap[Int, Account], E, A]
-    ): ZIO[Any, E, A] =
+    layer: ZLayer[Any, Nothing, GigaMap[Int, Account]]
+  )(
+    zio: ZIO[GigaMap[Int, Account], E, A]
+  ): ZIO[Any, E, A] =
     ZIO.scoped {
       layer.build.flatMap(env => zio.provideEnvironment(env))
     }
@@ -57,7 +56,7 @@ object GigaMapSpec extends ZIOSpecDefault:
         .sorted(Comparator.reverseOrder())
         .forEach(Files.delete)
 
-  override def spec =
+  override def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
     suite("GigaMap")(
       suite("core behaviors")(
         test("puts and retrieves entries") {

@@ -1,17 +1,18 @@
 package io.github.riccardomerolla.zio.eclipsestore.gigamap
 
-import zio.*
-import zio.test.*
-
 import java.nio.file.Files
 import java.time.LocalDate
+
+import scala.jdk.CollectionConverters.*
+
+import zio.*
+import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.config.{ GigaMapDefinition, GigaMapIndex }
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.domain.GigaMapQuery
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.service.GigaMap
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
-import scala.jdk.CollectionConverters.*
 
 object AdvancedGigaMapSpec extends ZIOSpecDefault:
 
@@ -19,12 +20,12 @@ object AdvancedGigaMapSpec extends ZIOSpecDefault:
     case SPORTS, MUSIC, TRAVEL
 
   final case class Person(
-      firstName: String,
-      lastName: String,
-      dateOfBirth: LocalDate,
-      country: String,
-      interests: Set[Interest],
-    )
+    firstName: String,
+    lastName: String,
+    dateOfBirth: LocalDate,
+    country: String,
+    interests: Set[Interest],
+  )
 
   private val personIndexes = Chunk(
     GigaMapIndex.single[Person, String]("firstName", _.firstName),
@@ -64,7 +65,7 @@ object AdvancedGigaMapSpec extends ZIOSpecDefault:
       }
     }
 
-  override def spec =
+  override def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
     suite("Advanced Gigamap scenarios")(
       test("supports indexed queries similar to upstream basic example") {
         withGigaMap { gm =>

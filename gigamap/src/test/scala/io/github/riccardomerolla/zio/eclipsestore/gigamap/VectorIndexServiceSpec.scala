@@ -1,9 +1,8 @@
 package io.github.riccardomerolla.zio.eclipsestore.gigamap
 
-import zio.*
-import zio.Chunk
 import zio.test.*
 import zio.test.Assertion.*
+import zio.{ Chunk, * }
 
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.*
 
@@ -20,10 +19,10 @@ object VectorIndexServiceSpec extends ZIOSpecDefault:
   // ---- Shared test embeddings (unit/direction vectors) --------------------
 
   // 3-D unit vectors for predictable cosine/dot-product scores
-  private val xAxis  = Chunk(1.0f, 0.0f, 0.0f) // points in X direction
-  private val yAxis  = Chunk(0.0f, 1.0f, 0.0f) // 90° from X
-  private val negX   = Chunk(-1.0f, 0.0f, 0.0f) // 180° from X
-  private val nearX  = Chunk(0.9f, 0.436f, 0.0f) // ≈25° from X
+  private val xAxis = Chunk(1.0f, 0.0f, 0.0f)   // points in X direction
+  private val yAxis = Chunk(0.0f, 1.0f, 0.0f)   // 90° from X
+  private val negX  = Chunk(-1.0f, 0.0f, 0.0f)  // 180° from X
+  private val nearX = Chunk(0.9f, 0.436f, 0.0f) // ≈25° from X
 
   private val articles = List(
     Article(1L, "X axis", xAxis),
@@ -44,9 +43,9 @@ object VectorIndexServiceSpec extends ZIOSpecDefault:
   // ---- Helper: create a fresh, pre-populated index ------------------------
 
   private def populatedIndex(
-      cfg: VectorIndexConfig,
-      items: List[Article] = articles,
-    ): ZIO[VectorIndexService, VectorError, VectorIndex[Article]] =
+    cfg: VectorIndexConfig,
+    items: List[Article] = articles,
+  ): ZIO[VectorIndexService, VectorError, VectorIndex[Article]] =
     for
       idx <- VectorIndexService.createIndex[Article]("articles", "test", cfg, ArticleVectorizer)
       _   <- ZIO.foreachDiscard(items)(a => idx.add(a.id, a))
@@ -131,30 +130,39 @@ object VectorIndexServiceSpec extends ZIOSpecDefault:
     suite("lifecycle")(
       test("size reflects add and remove operations") {
         for
-          idx  <- VectorIndexService.createIndex[Article](
-                    "a", "idx", cosineConfig, ArticleVectorizer
-                  )
-          _    <- idx.add(1L, articles.head)
-          _    <- idx.add(2L, articles(1))
-          s1   <- idx.size
-          _    <- idx.remove(1L)
-          s2   <- idx.size
+          idx <- VectorIndexService.createIndex[Article](
+                   "a",
+                   "idx",
+                   cosineConfig,
+                   ArticleVectorizer,
+                 )
+          _   <- idx.add(1L, articles.head)
+          _   <- idx.add(2L, articles(1))
+          s1  <- idx.size
+          _   <- idx.remove(1L)
+          s2  <- idx.size
         yield assertTrue(s1 == 2 && s2 == 1)
       },
       test("getIndex returns the same index that was created") {
         for
-          idx      <- VectorIndexService.createIndex[Article](
-                        "a", "my-idx", cosineConfig, ArticleVectorizer
-                      )
-          _        <- idx.add(1L, articles.head)
-          fetched  <- VectorIndexService.getIndex[Article]("my-idx")
-          sz       <- fetched.size
+          idx     <- VectorIndexService.createIndex[Article](
+                       "a",
+                       "my-idx",
+                       cosineConfig,
+                       ArticleVectorizer,
+                     )
+          _       <- idx.add(1L, articles.head)
+          fetched <- VectorIndexService.getIndex[Article]("my-idx")
+          sz      <- fetched.size
         yield assertTrue(sz == 1)
       },
       test("deleteIndex removes the index") {
         for
           _      <- VectorIndexService.createIndex[Article](
-                      "a", "del-idx", cosineConfig, ArticleVectorizer
+                      "a",
+                      "del-idx",
+                      cosineConfig,
+                      ArticleVectorizer,
                     )
           _      <- VectorIndexService.deleteIndex("del-idx")
           result <- VectorIndexService.getIndex[Article]("del-idx").exit
@@ -163,10 +171,16 @@ object VectorIndexServiceSpec extends ZIOSpecDefault:
       test("creating duplicate index names fails") {
         for
           _ <- VectorIndexService.createIndex[Article](
-                 "a", "dup", cosineConfig, ArticleVectorizer
+                 "a",
+                 "dup",
+                 cosineConfig,
+                 ArticleVectorizer,
                )
           r <- VectorIndexService.createIndex[Article](
-                 "a", "dup", cosineConfig, ArticleVectorizer
+                 "a",
+                 "dup",
+                 cosineConfig,
+                 ArticleVectorizer,
                ).exit
         yield assert(r)(fails(isSubtype[VectorError.IndexAlreadyExists](anything)))
       },
@@ -180,7 +194,8 @@ object VectorIndexServiceSpec extends ZIOSpecDefault:
       test("add with wrong dimension fails with DimensionMismatch") {
         for
           idx <- VectorIndexService.createIndex[Article](
-                   "a", "dim-idx",
+                   "a",
+                   "dim-idx",
                    VectorIndexConfig(dimension = 5, similarityFunction = SimilarityFunction.Cosine),
                    ArticleVectorizer,
                  )
@@ -217,7 +232,10 @@ object VectorIndexServiceSpec extends ZIOSpecDefault:
       test("VectorIndexService.searchStream delegates to the index") {
         for
           _       <- VectorIndexService.createIndex[Article](
-                       "a", "stream-idx", cosineConfig, ArticleVectorizer
+                       "a",
+                       "stream-idx",
+                       cosineConfig,
+                       ArticleVectorizer,
                      )
           _       <- ZIO.foreachDiscard(articles) { a =>
                        VectorIndexService.getIndex[Article]("stream-idx").flatMap(_.add(a.id, a))
@@ -232,10 +250,13 @@ object VectorIndexServiceSpec extends ZIOSpecDefault:
       test("search on empty index returns empty list") {
         for
           idx     <- VectorIndexService.createIndex[Article](
-                       "a", "empty-idx", cosineConfig, ArticleVectorizer
+                       "a",
+                       "empty-idx",
+                       cosineConfig,
+                       ArticleVectorizer,
                      )
           results <- idx.search(xAxis, k = 10)
         yield assertTrue(results.isEmpty)
-      },
+      }
     ),
   ).provide(layer)

@@ -1,14 +1,13 @@
 package io.github.riccardomerolla.zio.eclipsestore.gigamap.vector
 
+import scala.math.sqrt
+
 import zio.*
 import zio.stream.*
 
-import scala.math.sqrt
-
 /** Top-level service for creating and querying named vector indexes.
   *
-  * Acquire it via [[VectorIndexService.live]] and inject with `VectorIndexService` in the ZIO
-  * environment.
+  * Acquire it via [[VectorIndexService.live]] and inject with `VectorIndexService` in the ZIO environment.
   *
   * Typical workflow:
   * {{{
@@ -39,14 +38,13 @@ trait VectorIndexService:
     *   A handle to the created [[VectorIndex]], ready for `add` / `search` / `persist`.
     */
   def createIndex[A](
-      mapName: String,
-      indexName: String,
-      config: VectorIndexConfig,
-      vectorizer: Vectorizer[A],
-    ): IO[VectorError, VectorIndex[A]]
+    mapName: String,
+    indexName: String,
+    config: VectorIndexConfig,
+    vectorizer: Vectorizer[A],
+  ): IO[VectorError, VectorIndex[A]]
 
-  /** Return the existing [[VectorIndex]] with the given name, or fail with
-    * [[VectorError.IndexNotFound]].
+  /** Return the existing [[VectorIndex]] with the given name, or fail with [[VectorError.IndexNotFound]].
     */
   def getIndex[A](indexName: String): IO[VectorError, VectorIndex[A]]
 
@@ -55,26 +53,26 @@ trait VectorIndexService:
 
   /** Convenience: delegate search to the named index (see [[VectorIndex.search]]). */
   def search[A](
-      indexName: String,
-      queryEmbedding: Chunk[Float],
-      k: Int,
-      minScore: Option[Float] = None,
-    ): IO[VectorError, List[VectorSearchResult[A]]]
+    indexName: String,
+    queryEmbedding: Chunk[Float],
+    k: Int,
+    minScore: Option[Float] = None,
+  ): IO[VectorError, List[VectorSearchResult[A]]]
 
   /** Convenience: delegate streaming search to the named index (see [[VectorIndex.searchStream]]).
     */
   def searchStream[A](
-      indexName: String,
-      queryEmbedding: Chunk[Float],
-      k: Int,
-    ): ZStream[Any, VectorError, VectorSearchResult[A]]
+    indexName: String,
+    queryEmbedding: Chunk[Float],
+    k: Int,
+  ): ZStream[Any, VectorError, VectorSearchResult[A]]
 
 object VectorIndexService:
 
-  /** In-memory [[VectorIndexService]] layer.  No external dependencies required.
+  /** In-memory [[VectorIndexService]] layer. No external dependencies required.
     *
-    * Background persistence fibers (if `persistenceIntervalMs` is configured) are started as
-    * daemon fibers and run until the ZIO runtime shuts down.
+    * Background persistence fibers (if `persistenceIntervalMs` is configured) are started as daemon fibers and run
+    * until the ZIO runtime shuts down.
     */
   val live: ULayer[VectorIndexService] =
     ZLayer.fromZIO(
@@ -86,11 +84,11 @@ object VectorIndexService:
   // ---- Accessor helpers ------------------------------------------------
 
   def createIndex[A](
-      mapName: String,
-      indexName: String,
-      config: VectorIndexConfig,
-      vectorizer: Vectorizer[A],
-    ): ZIO[VectorIndexService, VectorError, VectorIndex[A]] =
+    mapName: String,
+    indexName: String,
+    config: VectorIndexConfig,
+    vectorizer: Vectorizer[A],
+  ): ZIO[VectorIndexService, VectorError, VectorIndex[A]] =
     ZIO.serviceWithZIO[VectorIndexService](_.createIndex(mapName, indexName, config, vectorizer))
 
   def getIndex[A](indexName: String): ZIO[VectorIndexService, VectorError, VectorIndex[A]] =
@@ -100,37 +98,37 @@ object VectorIndexService:
     ZIO.serviceWithZIO[VectorIndexService](_.deleteIndex(indexName))
 
   def search[A](
-      indexName: String,
-      queryEmbedding: Chunk[Float],
-      k: Int,
-      minScore: Option[Float] = None,
-    ): ZIO[VectorIndexService, VectorError, List[VectorSearchResult[A]]] =
+    indexName: String,
+    queryEmbedding: Chunk[Float],
+    k: Int,
+    minScore: Option[Float] = None,
+  ): ZIO[VectorIndexService, VectorError, List[VectorSearchResult[A]]] =
     ZIO.serviceWithZIO[VectorIndexService](_.search(indexName, queryEmbedding, k, minScore))
 
   def searchStream[A](
-      indexName: String,
-      queryEmbedding: Chunk[Float],
-      k: Int,
-    ): ZStream[VectorIndexService, VectorError, VectorSearchResult[A]] =
+    indexName: String,
+    queryEmbedding: Chunk[Float],
+    k: Int,
+  ): ZStream[VectorIndexService, VectorError, VectorSearchResult[A]] =
     ZStream.serviceWithStream[VectorIndexService](_.searchStream(indexName, queryEmbedding, k))
 
 // ---- Live service -------------------------------------------------------
 
-private final class VectorIndexServiceLive(
-    state: Ref[Map[String, VectorIndex[Any]]]
-  ) extends VectorIndexService:
+final private class VectorIndexServiceLive(
+  state: Ref[Map[String, VectorIndex[Any]]]
+) extends VectorIndexService:
 
   override def createIndex[A](
-      mapName: String,
-      indexName: String,
-      config: VectorIndexConfig,
-      vectorizer: Vectorizer[A],
-    ): IO[VectorError, VectorIndex[A]] =
+    mapName: String,
+    indexName: String,
+    config: VectorIndexConfig,
+    vectorizer: Vectorizer[A],
+  ): IO[VectorError, VectorIndex[A]] =
     for
-      current <- state.get
-      _       <- ZIO.when(current.contains(indexName))(
-                   ZIO.fail(VectorError.IndexAlreadyExists(indexName))
-                 )
+      current  <- state.get
+      _        <- ZIO.when(current.contains(indexName))(
+                    ZIO.fail(VectorError.IndexAlreadyExists(indexName))
+                  )
       indexRef <- Ref.make(Map.empty[Long, (Array[Float], A)])
       index     = VectorIndexLive(config, vectorizer, indexRef)
       _        <- state.update(_ + (indexName -> index.asInstanceOf[VectorIndex[Any]]))
@@ -166,29 +164,29 @@ private final class VectorIndexServiceLive(
     yield ()
 
   override def search[A](
-      indexName: String,
-      queryEmbedding: Chunk[Float],
-      k: Int,
-      minScore: Option[Float] = None,
-    ): IO[VectorError, List[VectorSearchResult[A]]] =
+    indexName: String,
+    queryEmbedding: Chunk[Float],
+    k: Int,
+    minScore: Option[Float] = None,
+  ): IO[VectorError, List[VectorSearchResult[A]]] =
     getIndex[A](indexName).flatMap(_.search(queryEmbedding, k, minScore))
 
   override def searchStream[A](
-      indexName: String,
-      queryEmbedding: Chunk[Float],
-      k: Int,
-    ): ZStream[Any, VectorError, VectorSearchResult[A]] =
+    indexName: String,
+    queryEmbedding: Chunk[Float],
+    k: Int,
+  ): ZStream[Any, VectorError, VectorSearchResult[A]] =
     ZStream
       .fromZIO(getIndex[A](indexName))
       .flatMap(_.searchStream(queryEmbedding, k))
 
 // ---- Live index ---------------------------------------------------------
 
-private final class VectorIndexLive[A](
-    val config: VectorIndexConfig,
-    vectorizer: Vectorizer[A],
-    state: Ref[Map[Long, (Array[Float], A)]],
-  ) extends VectorIndex[A]:
+final private class VectorIndexLive[A](
+  val config: VectorIndexConfig,
+  vectorizer: Vectorizer[A],
+  state: Ref[Map[Long, (Array[Float], A)]],
+) extends VectorIndex[A]:
 
   override def add(id: Long, entity: A): IO[VectorError, Unit] =
     val embedding = vectorizer.vectorize(entity).toArray
@@ -204,10 +202,10 @@ private final class VectorIndexLive[A](
     state.get.map(_.size)
 
   override def search(
-      queryEmbedding: Chunk[Float],
-      k: Int,
-      minScore: Option[Float] = None,
-    ): IO[VectorError, List[VectorSearchResult[A]]] =
+    queryEmbedding: Chunk[Float],
+    k: Int,
+    minScore: Option[Float] = None,
+  ): IO[VectorError, List[VectorSearchResult[A]]] =
     val qv = queryEmbedding.toArray
     ZIO.when(qv.length != config.dimension)(
       ZIO.fail(VectorError.DimensionMismatch(config.dimension, qv.length))
@@ -217,8 +215,9 @@ private final class VectorIndexLive[A](
           .attempt {
             val fn = config.similarityFunction
             entries.iterator
-              .map { case (id, (embedding, entity)) =>
-                VectorSearchResult(entity, id, score(fn, qv, embedding))
+              .map {
+                case (id, (embedding, entity)) =>
+                  VectorSearchResult(entity, id, score(fn, qv, embedding))
               }
               .filter(r => minScore.forall(r.score >= _))
               .toList
@@ -229,9 +228,9 @@ private final class VectorIndexLive[A](
       }
 
   override def searchStream(
-      queryEmbedding: Chunk[Float],
-      k: Int,
-    ): ZStream[Any, VectorError, VectorSearchResult[A]] =
+    queryEmbedding: Chunk[Float],
+    k: Int,
+  ): ZStream[Any, VectorError, VectorSearchResult[A]] =
     ZStream
       .fromZIO(search(queryEmbedding, k))
       .flatMap(ZStream.fromIterable(_))

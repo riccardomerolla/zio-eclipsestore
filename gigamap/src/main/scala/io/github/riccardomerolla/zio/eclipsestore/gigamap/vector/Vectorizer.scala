@@ -19,14 +19,13 @@ trait Vectorizer[A]:
 
   /** Extract the embedding vector from an entity of type `A`.
     *
-    * The returned `Chunk` must have exactly `dimension` floats as specified in
-    * [[VectorIndexConfig]].
+    * The returned `Chunk` must have exactly `dimension` floats as specified in [[VectorIndexConfig]].
     */
   def vectorize(entity: A): Chunk[Float]
 
   /** Whether entities of type `A` already carry pre-computed embeddings.
     *
-    * Set to `false` when embeddings must be computed externally (e.g. via an embedding model API)
-    * before being added to the index.
+    * Set to `false` when embeddings must be computed externally (e.g. via an embedding model API) before being added to
+    * the index.
     */
   def isEmbedded: Boolean

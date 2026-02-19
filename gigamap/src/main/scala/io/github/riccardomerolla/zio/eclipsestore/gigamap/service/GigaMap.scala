@@ -29,14 +29,19 @@ object GigaMap:
   def make[K: Tag, V: Tag](definition: GigaMapDefinition[K, V])
       : ZLayer[EclipseStoreService, GigaMapError, GigaMap[K, V]] =
     ZLayer.fromZIO {
-      for service <- ZIO.service[EclipseStoreService]
-      yield GigaMapLive(definition, service)
+      for
+        service    <- ZIO.service[EclipseStoreService]
+        persistSem <- Semaphore.make(1)
+      yield GigaMapLive(definition, service, persistSem)
     }
 
   given [K: Tag, V: Tag]: Tag[GigaMap[K, V]] = Tag.derived
 
-final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[K, V], store: EclipseStoreService)
-    extends GigaMap[K, V]:
+final private class GigaMapLive[K, V: Tag](
+    initialDefinition: GigaMapDefinition[K, V],
+    store: EclipseStoreService,
+    persistSem: Semaphore,
+  ) extends GigaMap[K, V]:
   override val definition: GigaMapDefinition[K, V] = initialDefinition
 
   private val registry: GigaMapRegistry =
@@ -63,14 +68,16 @@ final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[
     new ConcurrentHashMap()
 
   override def put(key: K, value: V): IO[GigaMapError, Unit] =
-    for
-      previous <- attempt {
-                    Option(map.put(key, value)).map(_.asInstanceOf[V])
-                  }
-      _        <- updateIndexes(key, previous, Some(value))
-      _        <- updateVectorIndexes(key, previous, Some(value))
-      _        <- persistIfNeeded
-    yield ()
+    persistSem.withPermit {
+      for
+        previous <- attempt {
+                      Option(map.put(key, value)).map(_.asInstanceOf[V])
+                    }
+        _        <- updateIndexes(key, previous, Some(value))
+        _        <- updateVectorIndexes(key, previous, Some(value))
+        _        <- persistIfNeeded
+      yield ()
+    }
 
   override def putAll(values: Iterable[(K, V)]): IO[GigaMapError, Unit] =
     for _ <- ZIO.foreachDiscard(values) { case (key, value) => put(key, value) } yield ()
@@ -79,19 +86,23 @@ final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[
     attempt(Option(map.get(key)).map(_.asInstanceOf[V]))
 
   override def remove(key: K): IO[GigaMapError, Option[V]] =
-    for
-      removed <- attempt(Option(map.remove(key)).map(_.asInstanceOf[V]))
-      _       <- updateIndexes(key, removed, None)
-      _       <- updateVectorIndexes(key, removed, None)
-      _       <- persistIfNeeded
-    yield removed
+    persistSem.withPermit {
+      for
+        removed <- attempt(Option(map.remove(key)).map(_.asInstanceOf[V]))
+        _       <- updateIndexes(key, removed, None)
+        _       <- updateVectorIndexes(key, removed, None)
+        _       <- persistIfNeeded
+      yield removed
+    }
 
   override def clear: IO[GigaMapError, Unit] =
-    attempt {
-      map.clear()
-      indexState.values().asScala.foreach(_.clear())
-      vectorStore.values().asScala.foreach(_.clear())
-    } *> persistIfNeeded
+    persistSem.withPermit {
+      attempt {
+        map.clear()
+        indexState.values().asScala.foreach(_.clear())
+        vectorStore.values().asScala.foreach(_.clear())
+      } *> persistIfNeeded
+    }
 
   override def size: IO[GigaMapError, Int] =
     attempt(map.size())
@@ -220,10 +231,16 @@ final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[
       }
     }
 
+  // Called only when the caller already holds persistSem
   private def persistIfNeeded: IO[GigaMapError, Unit] =
-    if definition.autoPersist then persistState else ZIO.unit
+    if definition.autoPersist then persistStateInternal else ZIO.unit
 
+  // Public persist: acquires the semaphore to prevent concurrent mutation/persist
   private def persistState: IO[GigaMapError, Unit] =
+    persistSem.withPermit(persistStateInternal)
+
+  // Core persist logic — must only be called while persistSem is held
+  private def persistStateInternal: IO[GigaMapError, Unit] =
     val registryMaps              = registry.maps
     val registryIndexes           = registry.indexes
     val indexMaps                 =

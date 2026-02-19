@@ -12,6 +12,7 @@ A ZIO-based library for type-safe, efficient, and boilerplate-free access to [Ec
 - **Streaming Persistence**: Stream keys/values and batch updates with `putAll`/`persistAll`
 - **GigaMap Module**: Advanced indexed maps with query DSL, CRUD, and persistence support
   - **Vector Similarity Search** (4.x+): Semantic search via vector embeddings with cosine similarity
+  - **VectorIndexService** (4.x+): Standalone vector index with cosine/dot-product/euclidean similarity, `ZStream` results, and background persistence scheduling
 - **Resource Safety**: ZIO's resource management ensures proper cleanup
 - **Custom Type Handlers & Blobs**: Register custom binary handlers for domain types and blobs
 - **Backup Targets & Import/Export**: Built-in backup configuration (SQLite/SQL/S3/FTP), import/export helpers
@@ -207,6 +208,7 @@ The `gigamap` sub-project implements EclispeStore's GigaMap feature set (CRUD, i
 - Configure maps and indexes via `GigaMapDefinition`/`GigaMapIndex`
 - Query using predicates or index lookups (`GigaMapQuery`)
 - **Vector Similarity Search** (4.x+): Semantic search via `GigaMapVectorIndex` and `GigaMapQuery.VectorSimilarity`
+- **VectorIndexService** (4.x+): Standalone vector index service with multiple similarity functions, streaming, and background persistence
 - Persist and reload through `EclipseStoreService`
 
 **Vector Similarity Search Example:**
@@ -239,6 +241,64 @@ sbt gigamap/test
 ```
 
 You can create a map layer via `GigaMap.make(definition)` and inject it in your ZIO apps.
+
+#### VectorIndexService — Standalone Vector Search (4.x+)
+
+For more advanced use cases (multiple similarity functions, streaming results, background persistence, explicit lifecycle), use the standalone `VectorIndexService`:
+
+```scala
+import io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.*
+import zio.*
+import zio.stream.*
+
+case class Product(id: Long, name: String, embedding: Chunk[Float])
+
+object ProductVectorizer extends Vectorizer[Product]:
+  def vectorize(p: Product): Chunk[Float] = p.embedding
+  def isEmbedded: Boolean = true
+
+val config = VectorIndexConfig(
+  dimension = 768,
+  similarityFunction = SimilarityFunction.Cosine,
+  maxDegree = 32,
+  beamWidth = 200,
+  persistenceIntervalMs = Some(30_000L), // flush every 30 seconds
+)
+
+val program: ZIO[VectorIndexService, VectorError, Unit] =
+  for
+    idx     <- VectorIndexService.createIndex[Product](
+                 "products", "similarity", config, ProductVectorizer
+               )
+    _       <- idx.add(1L, Product(1L, "Laptop", laptopEmbedding))
+    _       <- idx.add(2L, Product(2L, "Monitor", monitorEmbedding))
+    results <- VectorIndexService.search[Product](
+                 "similarity", queryEmbedding, k = 5
+               )
+    _       <- ZIO.foreach(results) { r =>
+                 Console.printLine(s"${r.entity.name} (score: ${r.score})")
+               }
+  yield ()
+
+program.provide(VectorIndexService.live)
+```
+
+**Similarity function guide:**
+
+| Function | Best for | Score range |
+|---|---|---|
+| `Cosine` | Text / semantic embeddings (OpenAI, Sentence-Transformers) | [–1, 1] |
+| `DotProduct` | Pre-normalised (unit-length) embeddings — same result as cosine but faster | (–∞, +∞) |
+| `Euclidean` | Geometry-based models where spatial distance is meaningful | (–∞, 0] |
+
+**Streaming results:**
+
+```scala
+VectorIndexService
+  .searchStream[Product]("similarity", queryEmbedding, k = 100)
+  .mapZIO(r => Console.printLine(s"${r.entity.name}: ${r.score}"))
+  .runDrain
+```
 
 #### GigaMap Bookstore REPL (zio-cli)
 

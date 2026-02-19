@@ -1,8 +1,8 @@
 package io.github.riccardomerolla.zio.eclipsestore.examples.deleting
 
-import zio.*
-
 import java.nio.file.Path
+
+import zio.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError

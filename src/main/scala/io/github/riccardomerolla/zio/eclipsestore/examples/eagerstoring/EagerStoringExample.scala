@@ -1,10 +1,10 @@
 package io.github.riccardomerolla.zio.eclipsestore.examples.eagerstoring
 
-import zio.*
-
 import java.lang.reflect.Field
 import java.nio.file.Path
 import java.time.LocalDateTime
+
+import zio.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
@@ -12,9 +12,9 @@ import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 import org.eclipse.serializer.persistence.types.PersistenceEagerStoringFieldEvaluator
 
 final case class EagerRoot(
-    @StoreEager private var nums: List[Int],
-    private var dates: List[LocalDateTime],
-  ):
+  @StoreEager private var nums: List[Int], // scalafix:ok DisableSyntax.var
+  private var dates: List[LocalDateTime], // scalafix:ok DisableSyntax.var
+):
   def numbers: List[Int]             = nums
   def datesList: List[LocalDateTime] = dates
   def appendNext(): EagerRoot        =

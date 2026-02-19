@@ -1,12 +1,13 @@
 package io.github.riccardomerolla.zio.eclipsestore
 
+import java.nio.file.Files
+
+import scala.jdk.CollectionConverters.*
+
 import zio.*
 import zio.test.*
 
-import java.nio.file.Files
-
 import io.github.riccardomerolla.zio.eclipsestore.examples.eagerstoring.EagerStoringExample
-import scala.jdk.CollectionConverters.*
 
 object EagerStoringExampleSpec extends ZIOSpecDefault:
 
@@ -19,7 +20,7 @@ object EagerStoringExampleSpec extends ZIOSpecDefault:
       )
     }
 
-  override def spec =
+  override def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
     suite("Eager storing example")(
       test("eager field persists on each step while non-eager grows only in memory until persisted") {
         ZIO.serviceWithZIO[java.nio.file.Path] { dir =>

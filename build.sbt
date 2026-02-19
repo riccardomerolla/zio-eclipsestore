@@ -8,7 +8,10 @@ lazy val zioSchemaVersion = "1.8.0"
 lazy val zioJsonVersion = "0.9.0"
 lazy val zioHttpVersion = "3.8.1"
 lazy val zioConfigVersion = "4.0.6"
-lazy val eclipseStoreVersion = "3.0.1"
+lazy val eclipseStoreVersion = "4.0.0-beta1"
+
+addCommandAlias("fmt", " ; scalafixAll ; scalafmtAll")
+addCommandAlias("check", "; scalafixAll --check; scalafmtCheckAll")
 
 inThisBuild(List(
   organization := "io.github.riccardomerolla",
@@ -30,13 +33,26 @@ inThisBuild(List(
       "scm:git@github.com:riccardomerolla/zio-eclipsestore.git"
     )
   ),
-  versionScheme := Some("early-semver")
+  versionScheme := Some("early-semver"),
+  scalacOptions ++= Seq(
+    "-language:existentials",
+    "-explain",
+    "-Wunused:all",
+    "-Xmax-inlines",
+    "128",
+  ),
+  semanticdbEnabled                := true,
 ))
 
 lazy val root = (project in file("."))
   .settings(
     name := "zio-eclipsestore",
     description := "ZIO-based library for type-safe, efficient, and boilerplate-free access to EclipseStore",
+    // LazyLoadingSpec uses EclipseStore's Lazy type which requires var/null fields for
+    // Java interop - DisableSyntax inline suppression doesn't work for constructor params
+    Test / scalafix / unmanagedSources :=
+      (Test / unmanagedSources).value
+        .filterNot(_.getName == "LazyLoadingSpec.scala"),
     libraryDependencies ++= Seq(
       "dev.zio" %% "zio" % zioVersion,
       "dev.zio" %% "zio-streams" % zioVersion,

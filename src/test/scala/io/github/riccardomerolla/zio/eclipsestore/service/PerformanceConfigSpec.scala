@@ -1,29 +1,30 @@
 package io.github.riccardomerolla.zio.eclipsestore.service
 
-import zio.*
-import zio.test.*
-
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+
+import scala.jdk.CollectionConverters.*
+
+import zio.*
+import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.*
 import org.eclipse.serializer.persistence.binary.types.Binary
 import org.eclipse.serializer.persistence.types.PersistenceTypeHandler
-import scala.jdk.CollectionConverters.*
 
 /** Verifies that performance-related configuration knobs are propagated to the underlying foundation. */
 object PerformanceConfigSpec extends ZIOSpecDefault:
 
   final private class CapturingFoundation:
-    var channelCount: Option[Int]                      = None
-    var pageCache: Option[Long]                        = None
-    var objectCache: Option[Long]                      = None
-    var offHeap: Boolean                               = false
-    var compression: Option[String]                    = None
-    var encryption: Option[Array[Byte]]                = None
-    var backupDir: Option[String]                      = None
-    var truncationDir: Option[String]                  = None
-    var deletionDir: Option[String]                    = None
+    var channelCount: Option[Int]                      = None  // scalafix:ok DisableSyntax.var
+    var pageCache: Option[Long]                        = None  // scalafix:ok DisableSyntax.var
+    var objectCache: Option[Long]                      = None  // scalafix:ok DisableSyntax.var
+    var offHeap: Boolean                               = false // scalafix:ok DisableSyntax.var
+    var compression: Option[String]                    = None  // scalafix:ok DisableSyntax.var
+    var encryption: Option[Array[Byte]]                = None  // scalafix:ok DisableSyntax.var
+    var backupDir: Option[String]                      = None  // scalafix:ok DisableSyntax.var
+    var truncationDir: Option[String]                  = None  // scalafix:ok DisableSyntax.var
+    var deletionDir: Option[String]                    = None  // scalafix:ok DisableSyntax.var
     val backupProps: ConcurrentHashMap[String, String] = new ConcurrentHashMap()
     val handlerRegistered: AtomicBoolean               = new AtomicBoolean(false)
     val eagerEvaluatorRegistered: AtomicBoolean        = new AtomicBoolean(false)
@@ -47,8 +48,8 @@ object PerformanceConfigSpec extends ZIOSpecDefault:
           def registerCustomTypeHandlers(handler: PersistenceTypeHandler[Binary, ?]): Unit =
             handlerRegistered.set(true)
           def setReferenceFieldEagerEvaluator(
-              eval: org.eclipse.serializer.persistence.types.PersistenceEagerStoringFieldEvaluator
-            ): Unit =
+            eval: org.eclipse.serializer.persistence.types.PersistenceEagerStoringFieldEvaluator
+          ): Unit =
             eagerEvaluatorRegistered.set(true)
       )
 
@@ -114,7 +115,7 @@ object PerformanceConfigSpec extends ZIOSpecDefault:
       },
     )
 
-  final private class Dummy(var value: String)
+  final private class Dummy(var value: String) // scalafix:ok DisableSyntax.var
   private object Dummy:
     val handler: org.eclipse.serializer.persistence.binary.types.BinaryTypeHandler[Dummy] =
       org
@@ -140,5 +141,3 @@ object PerformanceConfigSpec extends ZIOSpecDefault:
               (d: Dummy, v: String) => d.value = v,
             ),
         )
-
-  import scala.jdk.CollectionConverters.*

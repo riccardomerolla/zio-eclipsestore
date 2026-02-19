@@ -1,11 +1,14 @@
 package io.github.riccardomerolla.zio.eclipsestore.service
 
-import zio.*
-import zio.stream.ZStream
-
 import java.nio.file.Path
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
+
+import scala.jdk.CollectionConverters.*
+import scala.util.Using
+
+import zio.*
+import zio.stream.ZStream
 
 import io.github.riccardomerolla.zio.eclipsestore.config.{
   CompressionSetting,
@@ -15,9 +18,7 @@ import io.github.riccardomerolla.zio.eclipsestore.config.{
 import io.github.riccardomerolla.zio.eclipsestore.domain.{ Query, RootContainer, RootContext, RootDescriptor }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import org.eclipse.serializer.persistence.types.{ Persister, Storer }
-import org.eclipse.store.storage.embedded.types.{ EmbeddedStorage, EmbeddedStorageFoundation, EmbeddedStorageManager }
-import scala.jdk.CollectionConverters.*
-import scala.util.Using
+import org.eclipse.store.storage.embedded.types.{ EmbeddedStorage, EmbeddedStorageManager }
 
 enum LifecycleCommand:
   case Checkpoint
@@ -90,16 +91,16 @@ trait EclipseStoreService:
 
 /** Live implementation of EclipseStoreService backed by EclipseStore */
 final case class EclipseStoreServiceLive(
-    config: EclipseStoreConfig,
-    storageManager: EmbeddedStorageManager,
-    rootContainer: RootContainer,
-    storer: Option[Storer],
-    persister: Option[Persister],
-    statusRef: Ref[LifecycleStatus],
-    configuredDescriptors: Chunk[RootDescriptor[?]],
-    keyValueDescriptor: RootDescriptor[ConcurrentHashMap[Any, Any]],
-    startedAt: Instant = Instant.now(),
-  ) extends EclipseStoreService:
+  config: EclipseStoreConfig,
+  storageManager: EmbeddedStorageManager,
+  rootContainer: RootContainer,
+  storer: Option[Storer],
+  persister: Option[Persister],
+  statusRef: Ref[LifecycleStatus],
+  configuredDescriptors: Chunk[RootDescriptor[?]],
+  keyValueDescriptor: RootDescriptor[ConcurrentHashMap[Any, Any]],
+  startedAt: Instant = Instant.now(), // scalafix:ok DisableSyntax.noInstantNow
+) extends EclipseStoreService:
   private val rootContext = RootContext(rootContainer, Some(storageManager), storer, persister)
 
   private def kvStore: ConcurrentHashMap[Any, Any] =
@@ -361,24 +362,29 @@ final case class EclipseStoreServiceLive(
 
   private def restartManager: IO[EclipseStoreError, Unit] =
     for
-      _ <- statusRef.set(LifecycleStatus.Restarting(Instant.now()))
-      _ <- ZIO
-             .attempt(storageManager.shutdown())
-             .mapError(e => EclipseStoreError.ResourceError("Failed to shutdown during restart", Some(e)))
-      _ <- ZIO
-             .attempt(storageManager.start())
-             .mapError(e => EclipseStoreError.InitializationError("Failed to restart storage manager", Some(e)))
-      _ <- reloadRoots
-      _ <- statusRef.set(LifecycleStatus.Running(Instant.now()))
+      restartingAt <- Clock.instant
+      _            <- statusRef.set(LifecycleStatus.Restarting(restartingAt))
+      _            <- ZIO
+                        .attempt(storageManager.shutdown())
+                        .mapError(e => EclipseStoreError.ResourceError("Failed to shutdown during restart", Some(e)))
+      _            <- ZIO
+                        .attempt(storageManager.start())
+                        .mapError(e => EclipseStoreError.InitializationError("Failed to restart storage manager", Some(e)))
+      _            <- reloadRoots
+      runningAt    <- Clock.instant
+      _            <- statusRef.set(LifecycleStatus.Running(runningAt))
     yield ()
 
   private[service] def shutdownManager: IO[EclipseStoreError, Unit] =
-    statusRef.set(LifecycleStatus.ShuttingDown(Instant.now())) *>
-      ZIO
-        .attempt(storageManager.shutdown())
-        .mapError(e => EclipseStoreError.ResourceError("Failed to shutdown storage manager", Some(e)))
-        .unit
-        .ensuring(statusRef.set(LifecycleStatus.Stopped).ignore)
+    for
+      shuttingDownAt <- Clock.instant
+      _              <- statusRef.set(LifecycleStatus.ShuttingDown(shuttingDownAt))
+      _              <- ZIO
+                          .attempt(storageManager.shutdown())
+                          .mapError(e => EclipseStoreError.ResourceError("Failed to shutdown storage manager", Some(e)))
+                          .unit
+                          .ensuring(statusRef.set(LifecycleStatus.Stopped).ignore)
+    yield ()
 
   def healthMonitor: UIO[Unit] =
     (for
@@ -522,7 +528,8 @@ object EclipseStoreService:
                                    EclipseStoreError.InitializationError(s"Failed to initialize root ${descriptor.id}", Some(e))
                                  )
                              )
-        statusRef         <- Ref.make[LifecycleStatus](LifecycleStatus.Starting(Instant.now()))
+        startingAt        <- Clock.instant
+        statusRef         <- Ref.make[LifecycleStatus](LifecycleStatus.Starting(startingAt))
         service            = EclipseStoreServiceLive(
                                config = config,
                                storageManager = storageManager,
@@ -548,10 +555,10 @@ object EclipseStoreService:
     }
 
   private[eclipsestore] def configureFoundation(
-      foundation: AnyRef,
-      performance: StoragePerformanceConfig,
-      config: EclipseStoreConfig,
-    ): IO[EclipseStoreError, Unit] =
+    foundation: AnyRef,
+    performance: StoragePerformanceConfig,
+    config: EclipseStoreConfig,
+  ): IO[EclipseStoreError, Unit] =
     ZIO
       .attempt {
         def invokeIfExists(method: String, args: Seq[AnyRef]): Unit =
@@ -609,9 +616,9 @@ object EclipseStoreService:
       .mapError(e => EclipseStoreError.InitializationError("Failed to apply storage configuration", Some(e)))
 
   private[eclipsestore] def applyBackupConfiguration(
-      target: AnyRef,
-      properties: Map[String, String],
-    ): Unit =
+    target: AnyRef,
+    properties: Map[String, String],
+  ): Unit =
     def invoke(name: String, args: Seq[AnyRef]): Unit =
       target.getClass.getMethods.find(m => m.getName == name && m.getParameterCount == args.length).foreach { m =>
         m.invoke(target, args*)

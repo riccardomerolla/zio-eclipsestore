@@ -1,13 +1,13 @@
 package io.github.riccardomerolla.zio.eclipsestore.config
 
+import java.nio.file.Path
+
 import zio.*
 import zio.test.*
 
-import java.nio.file.Path
-
 object EclipseStoreConfigZIOSpec extends ZIOSpecDefault:
 
-  override def spec =
+  override def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
     suite("EclipseStoreConfigZIO")(
       test("loads config from resource path") {
         for

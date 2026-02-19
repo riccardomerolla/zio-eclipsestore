@@ -1,19 +1,19 @@
 package io.github.riccardomerolla.zio.eclipsestore
 
+import java.nio.file.Files
+import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
+import java.util.{ ArrayList, Iterator as JIterator, List as JList }
+
+import scala.jdk.CollectionConverters.*
+
 import zio.*
 import zio.test.*
 
-import java.nio.file.Files
-import java.time.Instant
-import java.util.{ ArrayList, Iterator as JIterator, List as JList }
-import java.util.concurrent.ConcurrentHashMap
-
-import io.github.riccardomerolla.zio.eclipsestore.LazyHelpers
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 import org.eclipse.serializer.reference.Lazy
-import scala.jdk.CollectionConverters.*
 
 object LazyLoadingSpec extends ZIOSpecDefault:
 
@@ -22,7 +22,7 @@ object LazyLoadingSpec extends ZIOSpecDefault:
   final class BusinessYear(private var turnovers: Lazy[JList[Turnover]] = null):
     private def ensureTurnovers(): JList[Turnover] =
       val current = Lazy.get(turnovers)
-      if current != null then current
+      if current != null then current // scalafix:ok DisableSyntax.null
       else
         val fresh = new ArrayList[Turnover]()
         turnovers = Lazy.Reference(fresh)
@@ -33,12 +33,12 @@ object LazyLoadingSpec extends ZIOSpecDefault:
 
     def stream: Iterator[Turnover] =
       val data = Lazy.get(turnovers)
-      if data == null then Iterator.empty
+      if data == null then Iterator.empty // scalafix:ok DisableSyntax.null
       else
         val it: JIterator[Turnover] = data.iterator()
         it.asScala
 
-  override def spec =
+  override def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
     suite("Lazy loading primitives")(
       test("Lazy.Reference exposes value and updates touched timestamp") {
         val ref        = LazyHelpers.reference("lazy-value")

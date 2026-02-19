@@ -11,6 +11,7 @@ A ZIO-based library for type-safe, efficient, and boilerplate-free access to [Ec
 - **Lifecycle Management**: Checkpoints, backups, and restarts via `LifecycleCommand`
 - **Streaming Persistence**: Stream keys/values and batch updates with `putAll`/`persistAll`
 - **GigaMap Module**: Advanced indexed maps with query DSL, CRUD, and persistence support
+  - **Vector Similarity Search** (4.x+): Semantic search via vector embeddings with cosine similarity
 - **Resource Safety**: ZIO's resource management ensures proper cleanup
 - **Custom Type Handlers & Blobs**: Register custom binary handlers for domain types and blobs
 - **Backup Targets & Import/Export**: Built-in backup configuration (SQLite/SQL/S3/FTP), import/export helpers
@@ -18,6 +19,67 @@ A ZIO-based library for type-safe, efficient, and boilerplate-free access to [Ec
 - **Lazy Loading & Eager Storing**: Lazy references/collections plus eager-field semantics via examples
 - **ZIO Config Integration**: Load `EclipseStoreConfig` from HOCON/resources via zio-config
 - **Effect-Oriented**: All operations are ZIO effects for composability
+
+## Version Compatibility
+
+| zio-eclipsestore | EclipseStore | Scala | ZIO | Status |
+|---|---|---|---|---|
+| **2.x** (work-in-progress) | **4.0.0+** | 3.5+ | 2.1+ | IN DEVELOPMENT |
+| 1.x | 1.x | 3.3+ | 2.0+ | Stable |
+
+### Migration Guide: 1.x → 4.x
+
+**Key Changes:**
+- EclipseStore 4.0.0+ introduces native vector similarity search in GigaMap
+- New `VectorSimilarity` query type for semantic search operations
+- New `GigaMapVectorIndex` for defining vector embeddings on domain values
+
+**Breaking Changes:**
+- Build against EclipseStore 4.0.0-beta1 (or later stable 4.x)
+- GigaMapDefinition now supports optional vector indexes
+- Existing CRUD operations and regular indexes remain unchanged
+
+**Migration Steps:**
+1. Update `build.sbt` to use EclipseStore 4.x
+2. No code changes needed for existing GigaMap usage (backward compatible)
+3. To use vector search:
+   - Define a `GigaMapVectorIndex` for your value type
+   - Include it in `GigaMapDefinition.vectorIndexes`
+   - Query using `GigaMapQuery.VectorSimilarity`
+
+**Example: Vector Index Migration**
+
+```scala
+// Before (1.x) - Regular text index
+val definition = GigaMapDefinition(
+  name = "books",
+  indexes = Chunk(
+    GigaMapIndex.single("author", (book: Book) => book.author)
+  )
+)
+
+// After (4.x) - Add vector index for semantic search
+case class Book(id: String, title: String, author: String, embedding: Array[Float])
+
+val definition = GigaMapDefinition(
+  name = "books",
+  indexes = Chunk(
+    GigaMapIndex.single("author", (book: Book) => book.author)
+  ),
+  vectorIndexes = Chunk(
+    GigaMapVectorIndex("embedding", (book: Book) => book.embedding, dimension = 384)
+  )
+)
+
+// Query by vector similarity
+val queryVector = Array(0.1f, 0.5f, -0.2f, ...) // Your embedding vector
+GigaMap.query(GigaMapQuery.VectorSimilarity(
+  indexName = "embedding",
+  vector = queryVector,
+  limit = 10,
+  threshold = Some(0.7f)
+))
+```
 
 ## Getting Started
 
@@ -144,7 +206,33 @@ The `gigamap` sub-project implements EclispeStore's GigaMap feature set (CRUD, i
 
 - Configure maps and indexes via `GigaMapDefinition`/`GigaMapIndex`
 - Query using predicates or index lookups (`GigaMapQuery`)
+- **Vector Similarity Search** (4.x+): Semantic search via `GigaMapVectorIndex` and `GigaMapQuery.VectorSimilarity`
 - Persist and reload through `EclipseStoreService`
+
+**Vector Similarity Search Example:**
+
+```scala
+import io.github.riccardomerolla.zio.eclipsestore.gigamap.config.{GigaMapDefinition, GigaMapVectorIndex}
+import io.github.riccardomerolla.zio.eclipsestore.gigamap.domain.GigaMapQuery
+import zio.Chunk
+
+// Define a vector index on your value type
+val definition = GigaMapDefinition(
+  name = "documents",
+  vectorIndexes = Chunk(
+    GigaMapVectorIndex("text-embedding", (doc: Document) => doc.embedding, dimension = 384)
+  )
+)
+
+// Perform vector similarity search
+val queryEmbedding: Array[Float] = /* your query vector */
+GigaMap.query(GigaMapQuery.VectorSimilarity(
+  indexName = "text-embedding",
+  vector = queryEmbedding,
+  limit = 5,  // Return top 5 results
+  threshold = Some(0.85f)  // Minimum similarity score
+))
+```
 
 ```
 sbt gigamap/test

@@ -2,8 +2,6 @@ package io.github.riccardomerolla.zio.eclipsestore.examples.reloader
 
 import zio.*
 
-import java.nio.file.Files
-
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService

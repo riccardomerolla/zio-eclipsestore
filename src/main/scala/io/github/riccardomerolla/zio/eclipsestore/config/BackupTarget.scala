@@ -7,11 +7,11 @@ sealed trait BackupTarget:
 object BackupTarget:
   /** SQLite backup target using JDBC URL, optional catalog/schema and custom data-source-provider class. */
   final case class SqliteBackup(
-      url: String,
-      dataSourceProvider: Option[String] = None,
-      catalog: Option[String] = None,
-      schema: Option[String] = None,
-    ) extends BackupTarget:
+    url: String,
+    dataSourceProvider: Option[String] = None,
+    catalog: Option[String] = None,
+    schema: Option[String] = None,
+  ) extends BackupTarget:
     override def toProperties: Map[String, String] =
       Map(
         "backup-filesystem.sql.sqlite.url" -> url
@@ -21,11 +21,11 @@ object BackupTarget:
 
   /** AWS S3 backup target using static credentials. Bucket/path selection is left to higher-level config. */
   final case class S3Backup(
-      accessKeyId: String,
-      secretAccessKey: String,
-      region: String,
-      sessionToken: Option[String] = None,
-    ) extends BackupTarget:
+    accessKeyId: String,
+    secretAccessKey: String,
+    region: String,
+    sessionToken: Option[String] = None,
+  ) extends BackupTarget:
     override def toProperties: Map[String, String] =
       Map(
         "backup-filesystem.aws.s3.credentials.type"              -> "static",
@@ -36,13 +36,13 @@ object BackupTarget:
 
   /** Generic SQL backup target allowing provider prefix (e.g., postgres, mysql). */
   final case class SqlBackup(
-      provider: String,
-      url: String,
-      dataSourceProvider: Option[String] = None,
-      catalog: Option[String] = None,
-      schema: Option[String] = None,
-      extra: Map[String, String] = Map.empty,
-    ) extends BackupTarget:
+    provider: String,
+    url: String,
+    dataSourceProvider: Option[String] = None,
+    catalog: Option[String] = None,
+    schema: Option[String] = None,
+    extra: Map[String, String] = Map.empty,
+  ) extends BackupTarget:
     private val prefix                             = s"backup-filesystem.sql.$provider."
     override def toProperties: Map[String, String] =
       Map(prefix + "url" -> url) ++
@@ -53,13 +53,13 @@ object BackupTarget:
 
   /** Simple FTP/FTPS backup target. */
   final case class FtpBackup(
-      host: String,
-      user: Option[String] = None,
-      password: Option[String] = None,
-      port: Option[Int] = None,
-      basePath: Option[String] = None,
-      secure: Boolean = false,
-    ) extends BackupTarget:
+    host: String,
+    user: Option[String] = None,
+    password: Option[String] = None,
+    port: Option[Int] = None,
+    basePath: Option[String] = None,
+    secure: Boolean = false,
+  ) extends BackupTarget:
     override def toProperties: Map[String, String] =
       Map(
         "backup-filesystem.ftp.host"   -> host,

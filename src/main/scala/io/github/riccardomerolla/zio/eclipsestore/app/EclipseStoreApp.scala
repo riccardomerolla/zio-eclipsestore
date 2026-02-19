@@ -1,16 +1,17 @@
 package io.github.riccardomerolla.zio.eclipsestore.app
 
+import scala.collection.mutable.ListBuffer
+
 import zio.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
 import io.github.riccardomerolla.zio.eclipsestore.domain.{ Query, RootDescriptor }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand }
-import scala.collection.mutable.ListBuffer
 
 /** Example application demonstrating ZIO EclipseStore usage */
 object EclipseStoreApp extends ZIOAppDefault:
 
-  override def run =
+  override def run: ZIO[Environment & (ZIOAppArgs & Scope), Any, Any] =
     val program =
       for
         // Store some values in batch

@@ -1,5 +1,6 @@
 package io.github.riccardomerolla.zio.eclipsestore
 
+import zio.Scope
 import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.BackupTarget
@@ -8,11 +9,11 @@ import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 object BackupTargetSpec extends ZIOSpecDefault:
 
   final private class FakeFoundation:
-    var received: List[(String, String)]                                 = Nil
+    var received: List[(String, String)]                                 = Nil // scalafix:ok DisableSyntax.var
     def setBackupConfigurationProperty(key: String, value: String): Unit =
       received = received :+ (key -> value)
 
-  override def spec =
+  override def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
     suite("Backup configuration adapter")(
       test("applies backup configuration properties to foundations that support it") {
         val fake = FakeFoundation()

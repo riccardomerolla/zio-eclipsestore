@@ -11,6 +11,8 @@ A ZIO-based library for type-safe, efficient, and boilerplate-free access to [Ec
 - **Lifecycle Management**: Checkpoints, backups, and restarts via `LifecycleCommand`
 - **Streaming Persistence**: Stream keys/values and batch updates with `putAll`/`persistAll`
 - **GigaMap Module**: Advanced indexed maps with query DSL, CRUD, and persistence support
+  - **Vector Similarity Search** (4.x+): Semantic search via vector embeddings with cosine similarity
+  - **VectorIndexService** (4.x+): Standalone vector index with cosine/dot-product/euclidean similarity, `ZStream` results, and background persistence scheduling
 - **Resource Safety**: ZIO's resource management ensures proper cleanup
 - **Custom Type Handlers & Blobs**: Register custom binary handlers for domain types and blobs
 - **Backup Targets & Import/Export**: Built-in backup configuration (SQLite/SQL/S3/FTP), import/export helpers
@@ -18,6 +20,67 @@ A ZIO-based library for type-safe, efficient, and boilerplate-free access to [Ec
 - **Lazy Loading & Eager Storing**: Lazy references/collections plus eager-field semantics via examples
 - **ZIO Config Integration**: Load `EclipseStoreConfig` from HOCON/resources via zio-config
 - **Effect-Oriented**: All operations are ZIO effects for composability
+
+## Version Compatibility
+
+| zio-eclipsestore | EclipseStore | Scala | ZIO | Status |
+|---|---|---|---|---|
+| **2.x** (work-in-progress) | **4.0.0+** | 3.5+ | 2.1+ | IN DEVELOPMENT |
+| 1.x | 1.x | 3.3+ | 2.0+ | Stable |
+
+### Migration Guide: 1.x → 4.x
+
+**Key Changes:**
+- EclipseStore 4.0.0+ introduces native vector similarity search in GigaMap
+- New `VectorSimilarity` query type for semantic search operations
+- New `GigaMapVectorIndex` for defining vector embeddings on domain values
+
+**Breaking Changes:**
+- Build against EclipseStore 4.0.0-beta1 (or later stable 4.x)
+- GigaMapDefinition now supports optional vector indexes
+- Existing CRUD operations and regular indexes remain unchanged
+
+**Migration Steps:**
+1. Update `build.sbt` to use EclipseStore 4.x
+2. No code changes needed for existing GigaMap usage (backward compatible)
+3. To use vector search:
+   - Define a `GigaMapVectorIndex` for your value type
+   - Include it in `GigaMapDefinition.vectorIndexes`
+   - Query using `GigaMapQuery.VectorSimilarity`
+
+**Example: Vector Index Migration**
+
+```scala
+// Before (1.x) - Regular text index
+val definition = GigaMapDefinition(
+  name = "books",
+  indexes = Chunk(
+    GigaMapIndex.single("author", (book: Book) => book.author)
+  )
+)
+
+// After (4.x) - Add vector index for semantic search
+case class Book(id: String, title: String, author: String, embedding: Array[Float])
+
+val definition = GigaMapDefinition(
+  name = "books",
+  indexes = Chunk(
+    GigaMapIndex.single("author", (book: Book) => book.author)
+  ),
+  vectorIndexes = Chunk(
+    GigaMapVectorIndex("embedding", (book: Book) => book.embedding, dimension = 384)
+  )
+)
+
+// Query by vector similarity
+val queryVector = Array(0.1f, 0.5f, -0.2f, ...) // Your embedding vector
+GigaMap.query(GigaMapQuery.VectorSimilarity(
+  indexName = "embedding",
+  vector = queryVector,
+  limit = 10,
+  threshold = Some(0.7f)
+))
+```
 
 ## Getting Started
 
@@ -144,13 +207,98 @@ The `gigamap` sub-project implements EclispeStore's GigaMap feature set (CRUD, i
 
 - Configure maps and indexes via `GigaMapDefinition`/`GigaMapIndex`
 - Query using predicates or index lookups (`GigaMapQuery`)
+- **Vector Similarity Search** (4.x+): Semantic search via `GigaMapVectorIndex` and `GigaMapQuery.VectorSimilarity`
+- **VectorIndexService** (4.x+): Standalone vector index service with multiple similarity functions, streaming, and background persistence
 - Persist and reload through `EclipseStoreService`
+
+**Vector Similarity Search Example:**
+
+```scala
+import io.github.riccardomerolla.zio.eclipsestore.gigamap.config.{GigaMapDefinition, GigaMapVectorIndex}
+import io.github.riccardomerolla.zio.eclipsestore.gigamap.domain.GigaMapQuery
+import zio.Chunk
+
+// Define a vector index on your value type
+val definition = GigaMapDefinition(
+  name = "documents",
+  vectorIndexes = Chunk(
+    GigaMapVectorIndex("text-embedding", (doc: Document) => doc.embedding, dimension = 384)
+  )
+)
+
+// Perform vector similarity search
+val queryEmbedding: Array[Float] = /* your query vector */
+GigaMap.query(GigaMapQuery.VectorSimilarity(
+  indexName = "text-embedding",
+  vector = queryEmbedding,
+  limit = 5,  // Return top 5 results
+  threshold = Some(0.85f)  // Minimum similarity score
+))
+```
 
 ```
 sbt gigamap/test
 ```
 
 You can create a map layer via `GigaMap.make(definition)` and inject it in your ZIO apps.
+
+#### VectorIndexService — Standalone Vector Search (4.x+)
+
+For more advanced use cases (multiple similarity functions, streaming results, background persistence, explicit lifecycle), use the standalone `VectorIndexService`:
+
+```scala
+import io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.*
+import zio.*
+import zio.stream.*
+
+case class Product(id: Long, name: String, embedding: Chunk[Float])
+
+object ProductVectorizer extends Vectorizer[Product]:
+  def vectorize(p: Product): Chunk[Float] = p.embedding
+  def isEmbedded: Boolean = true
+
+val config = VectorIndexConfig(
+  dimension = 768,
+  similarityFunction = SimilarityFunction.Cosine,
+  maxDegree = 32,
+  beamWidth = 200,
+  persistenceIntervalMs = Some(30_000L), // flush every 30 seconds
+)
+
+val program: ZIO[VectorIndexService, VectorError, Unit] =
+  for
+    idx     <- VectorIndexService.createIndex[Product](
+                 "products", "similarity", config, ProductVectorizer
+               )
+    _       <- idx.add(1L, Product(1L, "Laptop", laptopEmbedding))
+    _       <- idx.add(2L, Product(2L, "Monitor", monitorEmbedding))
+    results <- VectorIndexService.search[Product](
+                 "similarity", queryEmbedding, k = 5
+               )
+    _       <- ZIO.foreach(results) { r =>
+                 Console.printLine(s"${r.entity.name} (score: ${r.score})")
+               }
+  yield ()
+
+program.provide(VectorIndexService.live)
+```
+
+**Similarity function guide:**
+
+| Function | Best for | Score range |
+|---|---|---|
+| `Cosine` | Text / semantic embeddings (OpenAI, Sentence-Transformers) | [–1, 1] |
+| `DotProduct` | Pre-normalised (unit-length) embeddings — same result as cosine but faster | (–∞, +∞) |
+| `Euclidean` | Geometry-based models where spatial distance is meaningful | (–∞, 0] |
+
+**Streaming results:**
+
+```scala
+VectorIndexService
+  .searchStream[Product]("similarity", queryEmbedding, k = 100)
+  .mapZIO(r => Console.printLine(s"${r.entity.name}: ${r.score}"))
+  .runDrain
+```
 
 #### GigaMap Bookstore REPL (zio-cli)
 

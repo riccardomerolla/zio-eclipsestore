@@ -29,14 +29,19 @@ object GigaMap:
   def make[K: Tag, V: Tag](definition: GigaMapDefinition[K, V])
       : ZLayer[EclipseStoreService, GigaMapError, GigaMap[K, V]] =
     ZLayer.fromZIO {
-      for service <- ZIO.service[EclipseStoreService]
-      yield GigaMapLive(definition, service)
+      for
+        service    <- ZIO.service[EclipseStoreService]
+        persistSem <- Semaphore.make(1)
+      yield GigaMapLive(definition, service, persistSem)
     }
 
   given [K: Tag, V: Tag]: Tag[GigaMap[K, V]] = Tag.derived
 
-final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[K, V], store: EclipseStoreService)
-    extends GigaMap[K, V]:
+final private class GigaMapLive[K, V: Tag](
+    initialDefinition: GigaMapDefinition[K, V],
+    store: EclipseStoreService,
+    persistSem: Semaphore,
+  ) extends GigaMap[K, V]:
   override val definition: GigaMapDefinition[K, V] = initialDefinition
 
   private val registry: GigaMapRegistry =
@@ -56,14 +61,23 @@ final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[
 
   private val indexes = definition.anyIndexes
 
+  private val vectorIndexes = definition.vectorIndexes
+
+  // Store vector embeddings for similarity search
+  private val vectorStore: ConcurrentHashMap[String, ConcurrentHashMap[Any, Array[Float]]] =
+    new ConcurrentHashMap()
+
   override def put(key: K, value: V): IO[GigaMapError, Unit] =
-    for
-      previous <- attempt {
-                    Option(map.put(key, value)).map(_.asInstanceOf[V])
-                  }
-      _        <- updateIndexes(key, previous, Some(value))
-      _        <- persistIfNeeded
-    yield ()
+    persistSem.withPermit {
+      for
+        previous <- attempt {
+                      Option(map.put(key, value)).map(_.asInstanceOf[V])
+                    }
+        _        <- updateIndexes(key, previous, Some(value))
+        _        <- updateVectorIndexes(key, previous, Some(value))
+        _        <- persistIfNeeded
+      yield ()
+    }
 
   override def putAll(values: Iterable[(K, V)]): IO[GigaMapError, Unit] =
     for _ <- ZIO.foreachDiscard(values) { case (key, value) => put(key, value) } yield ()
@@ -72,17 +86,23 @@ final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[
     attempt(Option(map.get(key)).map(_.asInstanceOf[V]))
 
   override def remove(key: K): IO[GigaMapError, Option[V]] =
-    for
-      removed <- attempt(Option(map.remove(key)).map(_.asInstanceOf[V]))
-      _       <- updateIndexes(key, removed, None)
-      _       <- persistIfNeeded
-    yield removed
+    persistSem.withPermit {
+      for
+        removed <- attempt(Option(map.remove(key)).map(_.asInstanceOf[V]))
+        _       <- updateIndexes(key, removed, None)
+        _       <- updateVectorIndexes(key, removed, None)
+        _       <- persistIfNeeded
+      yield removed
+    }
 
   override def clear: IO[GigaMapError, Unit] =
-    attempt {
-      map.clear()
-      indexState.values().asScala.foreach(_.clear())
-    } *> persistIfNeeded
+    persistSem.withPermit {
+      attempt {
+        map.clear()
+        indexState.values().asScala.foreach(_.clear())
+        vectorStore.values().asScala.foreach(_.clear())
+      } *> persistIfNeeded
+    }
 
   override def size: IO[GigaMapError, Int] =
     attempt(map.size())
@@ -115,6 +135,9 @@ final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[
       case GigaMapQuery.ByIndex(indexName, value) =>
         for result <- byIndex(indexName, value)
         yield result.asInstanceOf[A]
+      case query: GigaMapQuery.VectorSimilarity[V] =>
+        for result <- vectorSimilaritySearch(query.indexName, query.vector, query.limit, query.threshold)
+        yield result.asInstanceOf[A]
       case GigaMapQuery.Count()                   =>
         size.map(_.toLong).asInstanceOf[IO[GigaMapError, A]]
 
@@ -132,6 +155,61 @@ final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[
                    Chunk.fromIterable(data)
                  }
     yield entries
+
+  private def updateVectorIndexes(key: K, oldValue: Option[V], newValue: Option[V]): IO[GigaMapError, Unit] =
+    attempt {
+      vectorIndexes.foreach { vectorIndex =>
+        val name  = vectorIndex.name
+        val store =
+          vectorStore.computeIfAbsent(name, _ => new ConcurrentHashMap[Any, Array[Float]]())
+        oldValue.foreach { value =>
+          store.remove(key)
+        }
+        newValue.foreach { value =>
+          val vector = vectorIndex.extract(value)
+          store.put(key, vector)
+        }
+      }
+    }
+
+  private def vectorSimilaritySearch(
+      indexName: String,
+      queryVector: Array[Float],
+      limit: Int,
+      threshold: Option[Float]
+  ): IO[GigaMapError, Chunk[V]] =
+    for
+      vectorIndexOpt <- attempt { vectorIndexes.find(_.name == indexName) }
+      vectorIndex    <- ZIO.fromOption(vectorIndexOpt).orElseFail(IndexNotDefined(indexName))
+      store          <- attempt { vectorStore.computeIfAbsent(indexName, _ => new ConcurrentHashMap[Any, Array[Float]]()) }
+      results <- attempt {
+        val scores = store.entrySet().asScala
+          .map { entry =>
+            val key    = entry.getKey
+            val vector = entry.getValue
+            val distance = cosineSimilarity(queryVector, vector)
+            (key, distance)
+          }
+          .filter { case (_, distance) =>
+            threshold.forall(t => distance >= t)
+          }
+          .toList
+          .sortBy { case (_, distance) => -distance } // Sort by distance descending
+          .take(limit)
+          .map { case (key, _) =>
+            Option(map.get(key)).map(_.asInstanceOf[V])
+          }
+          .flatten
+        Chunk.fromIterable(scores)
+      }
+    yield results
+
+  private def cosineSimilarity(vecA: Array[Float], vecB: Array[Float]): Float =
+    if (vecA.length != vecB.length) return 0f
+    val dotProduct = (vecA zip vecB).foldLeft(0f) { case (sum, (a, b)) => sum + (a * b) }
+    val magnitudeA = Math.sqrt(vecA.foldLeft(0f) { case (sum, a) => sum + (a * a) })
+    val magnitudeB = Math.sqrt(vecB.foldLeft(0f) { case (sum, b) => sum + (b * b) })
+    if (magnitudeA == 0 || magnitudeB == 0) 0f else (dotProduct / (magnitudeA * magnitudeB)).toFloat
 
   private def updateIndexes(key: K, oldValue: Option[V], newValue: Option[V]): IO[GigaMapError, Unit] =
     attempt {
@@ -153,10 +231,16 @@ final private class GigaMapLive[K, V: Tag](initialDefinition: GigaMapDefinition[
       }
     }
 
+  // Called only when the caller already holds persistSem
   private def persistIfNeeded: IO[GigaMapError, Unit] =
-    if definition.autoPersist then persistState else ZIO.unit
+    if definition.autoPersist then persistStateInternal else ZIO.unit
 
+  // Public persist: acquires the semaphore to prevent concurrent mutation/persist
   private def persistState: IO[GigaMapError, Unit] =
+    persistSem.withPermit(persistStateInternal)
+
+  // Core persist logic — must only be called while persistSem is held
+  private def persistStateInternal: IO[GigaMapError, Unit] =
     val registryMaps              = registry.maps
     val registryIndexes           = registry.indexes
     val indexMaps                 =

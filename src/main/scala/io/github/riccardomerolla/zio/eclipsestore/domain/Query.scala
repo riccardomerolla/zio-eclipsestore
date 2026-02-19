@@ -1,7 +1,5 @@
 package io.github.riccardomerolla.zio.eclipsestore.domain
 
-import io.github.riccardomerolla.zio.eclipsestore.domain.RootContext
-
 /** Represents a query operation that can be executed against EclipseStore */
 sealed trait Query[+A]:
   /** Unique identifier for this query, used for batching similar queries */
@@ -33,8 +31,8 @@ object Query:
 
   /** A custom query that may not be batchable */
   final case class Custom[A](
-      operation: String,
-      run: RootContext => A,
-      batchable: Boolean = false,
-      queryId: String = "custom",
-    ) extends Query[A]
+    operation: String,
+    run: RootContext => A,
+    batchable: Boolean = false,
+    queryId: String = "custom",
+  ) extends Query[A]

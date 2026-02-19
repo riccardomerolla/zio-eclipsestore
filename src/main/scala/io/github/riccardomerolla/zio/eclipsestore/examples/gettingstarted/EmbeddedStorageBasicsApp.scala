@@ -1,9 +1,9 @@
 package io.github.riccardomerolla.zio.eclipsestore.examples.gettingstarted
 
-import zio.*
-
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+
+import zio.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor

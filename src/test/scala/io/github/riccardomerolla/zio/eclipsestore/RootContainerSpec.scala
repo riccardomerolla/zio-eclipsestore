@@ -1,8 +1,9 @@
 package io.github.riccardomerolla.zio.eclipsestore
 
-import zio.test.*
-
 import java.util.concurrent.ConcurrentHashMap
+
+import zio.Scope
+import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.domain.{ RootContainer, RootDescriptor }
 
@@ -18,7 +19,7 @@ object RootContainerSpec extends ZIOSpecDefault:
   private val mapDescriptor =
     RootDescriptor.concurrentMap[String, String]("map-root")
 
-  override def spec =
+  override def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
     suite("RootContainer")(
       test("initializes descriptor when missing") {
         val container = RootContainer.empty

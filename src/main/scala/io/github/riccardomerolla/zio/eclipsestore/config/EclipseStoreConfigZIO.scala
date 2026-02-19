@@ -1,27 +1,27 @@
 package io.github.riccardomerolla.zio.eclipsestore.config
 
+import java.nio.file.Path
+
 import zio.*
 import zio.config.magnolia.{ deriveConfig, deriveConfigFromConfig }
 import zio.config.typesafe.TypesafeConfigProvider
-
-import java.nio.file.Path
 
 import com.typesafe.config.{ Config as HoconConfig, ConfigFactory }
 
 object EclipseStoreConfigZIO:
 
   final private case class ConfigInput(
-      maxParallelism: Option[Int],
-      batchSize: Option[Int],
-      queryTimeout: Option[zio.Duration],
-      performance: Option[StoragePerformanceConfig],
-      healthCheckInterval: Option[zio.Duration],
-      autoCheckpointInterval: Option[zio.Duration],
-      backupDirectory: Option[Path],
-      backupTruncationDirectory: Option[Path],
-      backupDeletionDirectory: Option[Path],
-      backupExternalProperties: Option[Map[String, String]],
-    )
+    maxParallelism: Option[Int],
+    batchSize: Option[Int],
+    queryTimeout: Option[zio.Duration],
+    performance: Option[StoragePerformanceConfig],
+    healthCheckInterval: Option[zio.Duration],
+    autoCheckpointInterval: Option[zio.Duration],
+    backupDirectory: Option[Path],
+    backupTruncationDirectory: Option[Path],
+    backupDeletionDirectory: Option[Path],
+    backupExternalProperties: Option[Map[String, String]],
+  )
 
   private given zio.Config[Path] =
     zio.Config.string.map(Path.of(_))
@@ -96,7 +96,7 @@ object EclipseStoreConfigZIO:
       StorageTarget.InMemory(prefix)
 
   private def loadConfig(provider: zio.ConfigProvider, hocon: HoconConfig)
-      : ZIO[Any, zio.Config.Error, EclipseStoreConfig] =
+    : ZIO[Any, zio.Config.Error, EclipseStoreConfig] =
     for in <- provider.load(config)
     yield EclipseStoreConfig(
       storageTarget = resolveStorageTarget(hocon),

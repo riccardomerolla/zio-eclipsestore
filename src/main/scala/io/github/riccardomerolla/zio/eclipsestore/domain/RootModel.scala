@@ -2,17 +2,18 @@ package io.github.riccardomerolla.zio.eclipsestore.domain
 
 import java.util.concurrent.ConcurrentHashMap
 
+import scala.jdk.CollectionConverters.*
+
 import org.eclipse.serializer.persistence.types.{ Persister, Storer }
 import org.eclipse.store.storage.embedded.types.EmbeddedStorageManager
-import scala.jdk.CollectionConverters.*
 
 /** Describes how to initialize and migrate a typed EclipseStore root instance. */
 final case class RootDescriptor[A](
-    id: String,
-    initializer: () => A,
-    migrate: A => A = (a: A) => a,
-    onLoad: A => Unit = (_: A) => (),
-  ):
+  id: String,
+  initializer: () => A,
+  migrate: A => A = (a: A) => a,
+  onLoad: A => Unit = (_: A) => (),
+):
   def map[B](f: A => B)(g: B => A): RootDescriptor[B] =
     RootDescriptor(
       id = id,
@@ -31,8 +32,8 @@ object RootDescriptor:
 
 /** Container that keeps track of all configured roots and applies migrations. */
 final class RootContainer private[domain] (
-    private val instances: ConcurrentHashMap[String, AnyRef]
-  ) extends Serializable:
+  private val instances: ConcurrentHashMap[String, AnyRef]
+) extends Serializable:
 
   def ensure[A](descriptor: RootDescriptor[A]): A =
     val value =
@@ -70,8 +71,8 @@ object RootContainer:
 
 /** Provides contextual handles for custom operations executed against EclipseStore. */
 final case class RootContext(
-    container: RootContainer,
-    storageManager: Option[EmbeddedStorageManager],
-    storer: Option[Storer],
-    persister: Option[Persister],
-  )
+  container: RootContainer,
+  storageManager: Option[EmbeddedStorageManager],
+  storer: Option[Storer],
+  persister: Option[Persister],
+)

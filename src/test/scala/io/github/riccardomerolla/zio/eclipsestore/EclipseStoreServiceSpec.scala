@@ -1,16 +1,17 @@
 package io.github.riccardomerolla.zio.eclipsestore
 
-import zio.*
-import zio.test.*
-
 import java.nio.file.{ Files, Path }
 import java.util.Comparator
+
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
+
+import zio.*
+import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.domain.{ Query, RootDescriptor }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand, LifecycleStatus }
-import scala.collection.mutable.ListBuffer
-import scala.jdk.CollectionConverters.*
 
 object EclipseStoreServiceSpec extends ZIOSpecDefault:
 
@@ -23,7 +24,7 @@ object EclipseStoreServiceSpec extends ZIOSpecDefault:
   private def sqliteLayer(path: Path) =
     ZLayer.succeed(EclipseStoreConfig(StorageTarget.Sqlite(path))) >>> EclipseStoreService.live
 
-  override def spec =
+  override def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
     suite("EclipseStoreService")(
       test("stores and retrieves a single value") {
         for

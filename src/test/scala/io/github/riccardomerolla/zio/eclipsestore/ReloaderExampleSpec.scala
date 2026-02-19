@@ -1,12 +1,13 @@
 package io.github.riccardomerolla.zio.eclipsestore
 
+import java.nio.file.Files
+
+import scala.jdk.CollectionConverters.*
+
 import zio.*
 import zio.test.*
 
-import java.nio.file.Files
-
 import io.github.riccardomerolla.zio.eclipsestore.examples.reloader.ReloaderExample
-import scala.jdk.CollectionConverters.*
 
 object ReloaderExampleSpec extends ZIOSpecDefault:
 
@@ -19,7 +20,7 @@ object ReloaderExampleSpec extends ZIOSpecDefault:
       )
     }
 
-  override def spec =
+  override def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
     suite("Reloader example")(
       test("reload restores cleared collection") {
         ZIO.serviceWithZIO[java.nio.file.Path] { dir =>

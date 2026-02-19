@@ -1,8 +1,5 @@
 package io.github.riccardomerolla.zio.eclipsestore
 
-import zio.*
-import zio.test.*
-
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
@@ -10,15 +7,23 @@ import java.nio.file.{ Files, Path }
 import java.time.Instant
 import javax.imageio.ImageIO
 
+import scala.jdk.CollectionConverters.*
+
+import zio.*
+import zio.test.*
+
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 import org.eclipse.serializer.persistence.binary.types.{ Binary, BinaryTypeHandler }
-import scala.jdk.CollectionConverters.*
 
 object CustomTypeHandlerSpec extends ZIOSpecDefault:
 
-  final private class Employee(var id: String, var salary: Double, var dateOfBirth: Instant)
+  final private class Employee(
+    var id: String,
+    var salary: Double,
+    var dateOfBirth: Instant,
+  ) // scalafix:ok DisableSyntax.var
 
   private object Employee:
     val typeHandler: BinaryTypeHandler[Employee] =
@@ -33,7 +38,7 @@ object CustomTypeHandlerSpec extends ZIOSpecDefault:
         Binary.Field_double("salary", (e: Employee) => e.salary, (e: Employee, v: Double) => e.salary = v),
       )
 
-  final private class ImageBlob(var image: BufferedImage)
+  final private class ImageBlob(var image: BufferedImage) // scalafix:ok DisableSyntax.var
 
   private object ImageBlob:
     private def toBytes(image: BufferedImage): Array[Byte] =
@@ -86,7 +91,7 @@ object CustomTypeHandlerSpec extends ZIOSpecDefault:
     img.setRGB(1, 1, Color.YELLOW.getRGB)
     img
 
-  override def spec =
+  override def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
     suite("Custom type handlers & blobs")(
       test("stores and reloads employee with custom type handler and buffered image blob") {
         val employee = new Employee("42", 99.5d, Instant.ofEpochMilli(1_000L))
@@ -108,7 +113,7 @@ object CustomTypeHandlerSpec extends ZIOSpecDefault:
               empOpt.exists(e =>
                 e.id == "42" && math.abs(e.salary - 99.5d) < 0.0001 && e.dateOfBirth == Instant.ofEpochMilli(1_000L)
               )
-            imgOk            = imgOpt.exists(_.image != null)
+            imgOk            = imgOpt.exists(_.image != null) // scalafix:ok DisableSyntax.null
           } yield assertTrue(empOk, imgOk)
         }
       }.provideLayerShared(tempDirLayer)

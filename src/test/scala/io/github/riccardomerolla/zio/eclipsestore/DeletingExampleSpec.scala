@@ -1,12 +1,13 @@
 package io.github.riccardomerolla.zio.eclipsestore
 
+import java.nio.file.Files
+
+import scala.jdk.CollectionConverters.*
+
 import zio.*
 import zio.test.*
 
-import java.nio.file.Files
-
 import io.github.riccardomerolla.zio.eclipsestore.examples.deleting.DeletingExample
-import scala.jdk.CollectionConverters.*
 
 object DeletingExampleSpec extends ZIOSpecDefault:
 
@@ -19,7 +20,7 @@ object DeletingExampleSpec extends ZIOSpecDefault:
       )
     }
 
-  override def spec =
+  override def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
     suite("Deleting example")(
       test("removes first element and persists removal") {
         ZIO.serviceWithZIO[java.nio.file.Path] { dir =>

@@ -1,14 +1,13 @@
 package io.github.riccardomerolla.zio.eclipsestore.config
 
-import zio.{ Chunk, Duration, ZLayer }
-
 import java.nio.file.{ Files, Path }
+
+import zio.{ Chunk, Duration, ZLayer }
 
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor.concurrentMap
 import org.eclipse.serializer.persistence.binary.types.Binary
-import org.eclipse.serializer.persistence.types.PersistenceEagerStoringFieldEvaluator
-import org.eclipse.serializer.persistence.types.PersistenceTypeHandler
+import org.eclipse.serializer.persistence.types.{ PersistenceEagerStoringFieldEvaluator, PersistenceTypeHandler }
 import org.eclipse.store.storage.embedded.types.EmbeddedStorageFoundation
 
 /** Storage target supported by EclipseStore */
@@ -21,15 +20,15 @@ object StorageTarget:
     * pragmas.
     */
   final case class Sqlite(
-      path: Path,
-      storageName: String = "eclipsestore.db",
-      connectionString: Option[String] = None,
-      busyTimeoutMs: Option[Int] = None,
-      cacheSizeKb: Option[Int] = None,
-      pageSizeBytes: Option[Int] = None,
-      journalMode: Option[String] = None,
-      synchronousMode: Option[String] = None,
-    ) extends StorageTarget:
+    path: Path,
+    storageName: String = "eclipsestore.db",
+    connectionString: Option[String] = None,
+    busyTimeoutMs: Option[Int] = None,
+    cacheSizeKb: Option[Int] = None,
+    pageSizeBytes: Option[Int] = None,
+    journalMode: Option[String] = None,
+    synchronousMode: Option[String] = None,
+  ) extends StorageTarget:
     override val storagePath: Option[Path] = Some(path)
     override def buildFoundation(): EmbeddedStorageFoundation[?] =
       // Current driver uses directory-backed storage; connectionString and pragmas are retained for future JDBC-aware foundations.
@@ -52,41 +51,41 @@ object StorageTarget:
       org.eclipse.store.storage.embedded.types.EmbeddedStorage.Foundation(directory)
 
   final case class Custom(
-      build: () => EmbeddedStorageFoundation[?],
-      override val storagePath: Option[Path],
-    ) extends StorageTarget:
+    build: () => EmbeddedStorageFoundation[?],
+    override val storagePath: Option[Path],
+  ) extends StorageTarget:
     override def buildFoundation(): EmbeddedStorageFoundation[?] = build()
 
 enum CompressionSetting:
   case Disabled, LZ4, Gzip
 
 final case class StoragePerformanceConfig(
-    channelCount: Int = 4,
-    pageCacheSizeBytes: Option[Long] = None,
-    objectCacheSizeBytes: Option[Long] = None,
-    useOffHeapPageStore: Boolean = false,
-    compression: CompressionSetting = CompressionSetting.Disabled,
-    encryptionKey: Option[Array[Byte]] = None,
-  )
+  channelCount: Int = 4,
+  pageCacheSizeBytes: Option[Long] = None,
+  objectCacheSizeBytes: Option[Long] = None,
+  useOffHeapPageStore: Boolean = false,
+  compression: CompressionSetting = CompressionSetting.Disabled,
+  encryptionKey: Option[Array[Byte]] = None,
+)
 
 /** Configuration for EclipseStore instance */
 final case class EclipseStoreConfig(
-    storageTarget: StorageTarget,
-    maxParallelism: Int = 10,
-    batchSize: Int = 100,
-    queryTimeout: Duration = Duration.fromSeconds(30),
-    rootDescriptors: Chunk[RootDescriptor[?]] = Chunk.single(concurrentMap[Any, Any]("kv-root")),
-    performance: StoragePerformanceConfig = StoragePerformanceConfig(),
-    healthCheckInterval: Duration = Duration.fromSeconds(5),
-    autoCheckpointInterval: Option[Duration] = None,
-    backupDirectory: Option[Path] = None,
-    backupTruncationDirectory: Option[Path] = None,
-    backupDeletionDirectory: Option[Path] = None,
-    backupExternalProperties: Map[String, String] = Map.empty,
-    backupTarget: Option[BackupTarget] = None,
-    customTypeHandlers: Chunk[PersistenceTypeHandler[Binary, ?]] = Chunk.empty,
-    eagerStoringEvaluator: Option[PersistenceEagerStoringFieldEvaluator] = None,
-  )
+  storageTarget: StorageTarget,
+  maxParallelism: Int = 10,
+  batchSize: Int = 100,
+  queryTimeout: Duration = Duration.fromSeconds(30),
+  rootDescriptors: Chunk[RootDescriptor[?]] = Chunk.single(concurrentMap[Any, Any]("kv-root")),
+  performance: StoragePerformanceConfig = StoragePerformanceConfig(),
+  healthCheckInterval: Duration = Duration.fromSeconds(5),
+  autoCheckpointInterval: Option[Duration] = None,
+  backupDirectory: Option[Path] = None,
+  backupTruncationDirectory: Option[Path] = None,
+  backupDeletionDirectory: Option[Path] = None,
+  backupExternalProperties: Map[String, String] = Map.empty,
+  backupTarget: Option[BackupTarget] = None,
+  customTypeHandlers: Chunk[PersistenceTypeHandler[Binary, ?]] = Chunk.empty,
+  eagerStoringEvaluator: Option[PersistenceEagerStoringFieldEvaluator] = None,
+)
 
 object EclipseStoreConfig:
   def make(storagePath: Path): EclipseStoreConfig =

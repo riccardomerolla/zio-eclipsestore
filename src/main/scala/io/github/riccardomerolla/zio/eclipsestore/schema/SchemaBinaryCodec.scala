@@ -21,10 +21,10 @@ object SchemaBinaryCodec:
 
   /** Derives a `BinaryTypeHandler[A]` from `Schema[A]` using an explicit type id. */
   def handler[A: ClassTag](schema: Schema[A], typeId: Long): BinaryTypeHandler[A] =
-    val runtimeClass = summon[ClassTag[A]].runtimeClass.asInstanceOf[Class[A]]
-    new SchemaBackedBinaryTypeHandler[A](runtimeClass, schema)
-      .initialize(typeId)
-      .asInstanceOf[BinaryTypeHandler[A]]
+    val runtimeClass = boxedClass(summon[ClassTag[A]].runtimeClass).asInstanceOf[Class[A]]
+    SchemaStandardTypeCodecs
+      .handlerFor(runtimeClass, schema, typeId)
+      .getOrElse(jsonPayloadHandler(runtimeClass, schema, typeId))
 
   /** Derives a `BinaryTypeHandler[A]` from `Schema[A]` using a deterministic type id. */
   def handler[A: ClassTag](schema: Schema[A]): BinaryTypeHandler[A] =
@@ -34,6 +34,22 @@ object SchemaBinaryCodec:
     val hash = MurmurHash3.stringHash(schema.ast.toString)
     val id   = java.lang.Integer.toUnsignedLong(hash)
     if id == 0L then 1L else id
+
+  private[schema] def jsonPayloadHandler[A](runtimeClass: Class[A], schema: Schema[A], typeId: Long): BinaryTypeHandler[A] =
+    new SchemaBackedBinaryTypeHandler[A](runtimeClass, schema).initialize(typeId).asInstanceOf[BinaryTypeHandler[A]]
+
+  private def boxedClass(cls: Class[?]): Class[?] =
+    if !cls.isPrimitive then cls
+    else if cls == java.lang.Boolean.TYPE then classOf[java.lang.Boolean]
+    else if cls == java.lang.Byte.TYPE then classOf[java.lang.Byte]
+    else if cls == java.lang.Short.TYPE then classOf[java.lang.Short]
+    else if cls == java.lang.Character.TYPE then classOf[java.lang.Character]
+    else if cls == java.lang.Integer.TYPE then classOf[java.lang.Integer]
+    else if cls == java.lang.Long.TYPE then classOf[java.lang.Long]
+    else if cls == java.lang.Float.TYPE then classOf[java.lang.Float]
+    else if cls == java.lang.Double.TYPE then classOf[java.lang.Double]
+    else if cls == java.lang.Void.TYPE then classOf[scala.runtime.BoxedUnit]
+    else cls
 
   private final class SchemaBackedBinaryTypeHandler[A](
     runtimeClass: Class[A],

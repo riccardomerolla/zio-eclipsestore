@@ -5,9 +5,11 @@ import zio.http.Server
 
 import java.nio.file.Paths
 
-import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
+import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
+import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.BookstoreRoot
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.http.BookRoutes
-import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.{ BookRepository, BookRepositoryError }
+import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.BookRepository
+import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
 object BookstoreServer extends ZIOAppDefault:
@@ -17,8 +19,14 @@ object BookstoreServer extends ZIOAppDefault:
 
   private val repositoryLayer: ZLayer[Any, Nothing, BookRepository] =
     (
-      EclipseStoreConfig.layer(Paths.get("bookstore-data")) >>>
-        EclipseStoreService.live.mapError(err => BookRepositoryError.StorageFailure(err.toString)).orDie >>>
+      ZLayer.succeed(
+        EclipseStoreConfig(
+          storageTarget = StorageTarget.FileSystem(Paths.get("bookstore-data")),
+          rootDescriptors = Chunk.single(BookstoreRoot.descriptor),
+        )
+      ) >>>
+        EclipseStoreService.live.mapError(err => new RuntimeException(err.toString)).orDie >>>
+        TypedStore.live >>>
         BookRepository.live
     )
 

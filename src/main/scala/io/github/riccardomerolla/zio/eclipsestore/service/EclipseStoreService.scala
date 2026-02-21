@@ -17,7 +17,9 @@ import io.github.riccardomerolla.zio.eclipsestore.config.{
 }
 import io.github.riccardomerolla.zio.eclipsestore.domain.{ Query, RootContainer, RootContext, RootDescriptor }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import org.eclipse.serializer.persistence.types.{ Persister, Storer }
+import io.github.riccardomerolla.zio.eclipsestore.schema.SchemaBinaryCodec
+import org.eclipse.serializer.persistence.binary.types.Binary
+import org.eclipse.serializer.persistence.types.{ PersistenceTypeHandler, Persister, Storer }
 import org.eclipse.store.storage.embedded.types.{ EmbeddedStorage, EmbeddedStorageManager }
 
 enum LifecycleCommand:
@@ -607,13 +609,42 @@ object EclipseStoreService:
                   catch case _: Throwable => () // best-effort registration
                 }
 
-              config.customTypeHandlers.foreach(handler => invokeCf("registerCustomTypeHandlers", Seq(handler)))
+              val allHandlers = mergedTypeHandlers(config)
+              allHandlers.foreach(handler => invokeCf("registerCustomTypeHandlers", Seq(handler)))
               config.eagerStoringEvaluator.foreach(eval => invokeCf("setReferenceFieldEagerEvaluator", Seq(eval)))
 
           method.invoke(foundation, consumer)
         }
       }
       .mapError(e => EclipseStoreError.InitializationError("Failed to apply storage configuration", Some(e)))
+
+  private[eclipsestore] def mergedTypeHandlers(config: EclipseStoreConfig): Chunk[PersistenceTypeHandler[Binary, ?]] =
+    val manual = config.customTypeHandlers
+    val auto   =
+      if config.autoRegisterSchemaHandlers then schemaDerivedHandlers(config.rootDescriptors)
+      else Chunk.empty
+    dedupeByType(manual ++ auto)
+
+  private[eclipsestore] def schemaDerivedHandlers(
+    descriptors: Chunk[RootDescriptor[?]]
+  ): Chunk[PersistenceTypeHandler[Binary, ?]] =
+    dedupeByType(descriptors.flatMap { descriptor =>
+      (descriptor.schema, descriptor.schemaClass) match
+        case (Some(schema), Some(runtimeClass)) =>
+          SchemaBinaryCodec
+            .handlers(schema.asInstanceOf[zio.schema.Schema[Any]], runtimeClass.asInstanceOf[Class[Any]])
+            .asInstanceOf[Chunk[PersistenceTypeHandler[Binary, ?]]]
+        case _                                  => Chunk.empty
+    })
+
+  private def dedupeByType(handlers: Chunk[PersistenceTypeHandler[Binary, ?]])
+    : Chunk[PersistenceTypeHandler[Binary, ?]] =
+    handlers.foldLeft((Chunk.empty[PersistenceTypeHandler[Binary, ?]], Set.empty[Class[?]])) {
+      case ((acc, seen), handler) =>
+        val tpe = handler.`type`()
+        if seen.contains(tpe) then (acc, seen)
+        else (acc :+ handler, seen + tpe)
+    }._1
 
   private[eclipsestore] def applyBackupConfiguration(
     target: AnyRef,

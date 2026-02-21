@@ -3,6 +3,9 @@ package io.github.riccardomerolla.zio.eclipsestore.domain
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.jdk.CollectionConverters.*
+import scala.reflect.ClassTag
+
+import zio.schema.Schema
 
 import org.eclipse.serializer.persistence.types.{ Persister, Storer }
 import org.eclipse.store.storage.embedded.types.EmbeddedStorageManager
@@ -13,6 +16,8 @@ final case class RootDescriptor[A](
   initializer: () => A,
   migrate: A => A = (a: A) => a,
   onLoad: A => Unit = (_: A) => (),
+  schema: Option[Schema[A]] = None,
+  schemaClass: Option[Class[A]] = None,
 ):
   def map[B](f: A => B)(g: B => A): RootDescriptor[B] =
     RootDescriptor(
@@ -23,6 +28,21 @@ final case class RootDescriptor[A](
     )
 
 object RootDescriptor:
+  def fromSchema[A: Schema: ClassTag](
+    id: String,
+    initializer: () => A,
+    migrate: A => A = (a: A) => a,
+    onLoad: A => Unit = (_: A) => (),
+  ): RootDescriptor[A] =
+    RootDescriptor(
+      id = id,
+      initializer = initializer,
+      migrate = migrate,
+      onLoad = onLoad,
+      schema = Some(summon[Schema[A]]),
+      schemaClass = Some(summon[ClassTag[A]].runtimeClass.asInstanceOf[Class[A]]),
+    )
+
   def concurrentMap[K, V](id: String): RootDescriptor[ConcurrentHashMap[K, V]] =
     RootDescriptor(
       id = id,

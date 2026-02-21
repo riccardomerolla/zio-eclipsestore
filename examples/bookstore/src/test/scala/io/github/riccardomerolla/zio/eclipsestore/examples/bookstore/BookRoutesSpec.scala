@@ -8,6 +8,7 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.*
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.http.BookRoutes
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.BookRepository
+import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
 object BookRoutesSpec extends ZIOSpecDefault:
@@ -15,7 +16,7 @@ object BookRoutesSpec extends ZIOSpecDefault:
   final case class JsonDecodeError(message: String) extends Exception(message)
 
   private val repoLayer: ULayer[BookRepository] =
-    EclipseStoreService.inMemory >>> BookRepository.live
+    EclipseStoreService.inMemory >>> TypedStore.live >>> BookRepository.live
 
   private val routes = BookRoutes.routes
 

@@ -84,6 +84,7 @@ final case class EclipseStoreConfig(
   backupExternalProperties: Map[String, String] = Map.empty,
   backupTarget: Option[BackupTarget] = None,
   customTypeHandlers: Chunk[PersistenceTypeHandler[Binary, ?]] = Chunk.empty,
+  autoRegisterSchemaHandlers: Boolean = true,
   eagerStoringEvaluator: Option[PersistenceEagerStoringFieldEvaluator] = None,
 )
 

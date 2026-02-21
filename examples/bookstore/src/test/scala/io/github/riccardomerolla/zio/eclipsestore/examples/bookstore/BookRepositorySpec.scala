@@ -5,12 +5,13 @@ import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.*
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.BookRepository
+import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
 object BookRepositorySpec extends ZIOSpecDefault:
 
   private val testLayer: ULayer[BookRepository] =
-    EclipseStoreService.inMemory >>> BookRepository.live
+    EclipseStoreService.inMemory >>> TypedStore.live >>> BookRepository.live
 
   override def spec =
     suite("BookRepository")(

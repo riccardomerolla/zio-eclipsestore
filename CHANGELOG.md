@@ -10,10 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Project template scaffolding for Scala 3 + ZIO 2.x libraries (typed errors, domain model, config helpers, service layer, tests, and sample app).
+- Schema integration docs in README including architecture and migration examples.
+- New chat-models runnable example: `ChatModelsSchemaApp`.
 
 ### Changed
 
 - Replaced the previous implementation with the new `io.github.riccardomerolla.zio.quickstart` library starter structure.
+- Bookstore example now uses `RootDescriptor.fromSchema` and `TypedStore` for schema-aware persistence.
+- Added migration notes for manual `BinaryTypeHandler` -> schema auto-registration path.
 
 ### Deprecated
 

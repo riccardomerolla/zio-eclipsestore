@@ -10,6 +10,56 @@ EclipseStore 4.0.0 introduced significant architectural improvements, including:
 - Improved concurrency support
 - New query types for semantic search
 
+## Migration: Manual Handlers -> ZIO Schema
+
+Schema integration removes most manual `BinaryTypeHandler` wiring.
+
+### Before (Manual)
+
+```scala
+final class Employee(var id: String, var salary: Double)
+
+val handler =
+  org.eclipse.serializer.persistence.binary.types.Binary.TypeHandler(
+    classOf[Employee],
+    org.eclipse.serializer.persistence.binary.types.Binary.Field(
+      classOf[String],
+      "id",
+      (e: Employee) => e.id,
+      (e: Employee, v: String) => e.id = v,
+    ),
+    org.eclipse.serializer.persistence.binary.types.Binary.Field_double(
+      "salary",
+      (e: Employee) => e.salary,
+      (e: Employee, v: Double) => e.salary = v,
+    ),
+  )
+
+val config = EclipseStoreConfig(
+  storageTarget = StorageTarget.FileSystem(path),
+  customTypeHandlers = Chunk(handler),
+)
+```
+
+### After (Schema)
+
+```scala
+import zio.schema.Schema
+import zio.schema.derived
+
+final case class Employee(id: String, salary: Double) derives Schema
+
+val config = EclipseStoreConfig(
+  storageTarget = StorageTarget.FileSystem(path),
+  rootDescriptors = Chunk(
+    RootDescriptor.fromSchema("employees", () => List.empty[Employee])
+  ),
+  autoRegisterSchemaHandlers = true, // default
+)
+```
+
+Manual handlers still work and take precedence when both manual and auto-derived handlers target the same runtime type.
+
 ## Breaking Changes
 
 ### 1. Build.sbt Update

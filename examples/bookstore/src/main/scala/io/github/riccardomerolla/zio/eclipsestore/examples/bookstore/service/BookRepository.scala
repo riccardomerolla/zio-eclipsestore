@@ -5,7 +5,7 @@ import zio.*
 import java.util.UUID
 
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.*
-import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
+import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
 import scala.jdk.CollectionConverters.*
 
 enum BookRepositoryError:
@@ -20,12 +20,12 @@ trait BookRepository:
   def delete(id: BookId): IO[BookRepositoryError, Unit]
   def list: IO[BookRepositoryError, Chunk[Book]]
 
-final case class BookRepositoryLive(store: EclipseStoreService) extends BookRepository:
+final case class BookRepositoryLive(store: TypedStore) extends BookRepository:
   private def withRoot: IO[BookRepositoryError, BookstoreRoot] =
-    store.root(BookstoreRoot.descriptor).mapError(err => BookRepositoryError.StorageFailure(err.toString))
+    store.typedRoot(BookstoreRoot.descriptor).mapError(err => BookRepositoryError.StorageFailure(err.toString))
 
   private def persist(root: BookstoreRoot): IO[BookRepositoryError, Unit] =
-    store.persist(root).mapError(err => BookRepositoryError.StorageFailure(err.toString))
+    store.storePersist(root).mapError(err => BookRepositoryError.StorageFailure(err.toString))
 
   override def create(payload: CreateBookRequest): IO[BookRepositoryError, Book] =
     for
@@ -84,5 +84,5 @@ object BookRepository:
   val list: ZIO[BookRepository, BookRepositoryError, Chunk[Book]] =
     ZIO.serviceWithZIO[BookRepository](_.list)
 
-  val live: ZLayer[EclipseStoreService, Nothing, BookRepository] =
+  val live: ZLayer[TypedStore, Nothing, BookRepository] =
     ZLayer.fromFunction(BookRepositoryLive.apply)

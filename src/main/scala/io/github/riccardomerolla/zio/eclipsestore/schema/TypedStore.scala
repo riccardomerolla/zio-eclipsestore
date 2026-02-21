@@ -11,25 +11,36 @@ import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
 /** Type-safe, schema-aware persistence operations on top of EclipseStoreService. */
 trait TypedStore:
+  /** Stores a typed value under a typed key after schema round-trip validation. */
   def store[K: Schema, V: Schema](key: K, value: V): IO[EclipseStoreError, Unit]
+
+  /** Fetches a typed value by key after schema validation of the key. */
   def fetch[K: Schema, V: Schema](key: K): IO[EclipseStoreError, Option[V]]
+
+  /** Removes a value by typed key after schema validation of the key. */
   def remove[K: Schema](key: K): IO[EclipseStoreError, Unit]
+
+  /** Reads all values currently available in the key-value root. */
   def fetchAll[V: Schema]: IO[EclipseStoreError, List[V]]
+
+  /** Streams all values currently available in the key-value root. */
   def streamAll[V: Schema]: ZStream[Any, EclipseStoreError, V]
+
+  /** Accesses a typed root descriptor, enabling schema-driven root registration. */
   def typedRoot[A: Schema](descriptor: RootDescriptor[A]): IO[EclipseStoreError, A]
+
+  /** Persists the provided value after schema round-trip validation. */
   def storePersist[A: Schema](value: A): IO[EclipseStoreError, Unit]
 
+/** Default `TypedStore` implementation backed by `EclipseStoreService`. */
 final case class TypedStoreLive(underlying: EclipseStoreService) extends TypedStore:
   private def validate[A: Schema](value: A, label: String): IO[EclipseStoreError, Unit] =
+    val codec = JsonCodec.jsonCodec(summon[Schema[A]])
+    val json  = codec.encodeJson(value, None).toString
     ZIO
-      .attempt {
-        val codec = JsonCodec.jsonCodec(summon[Schema[A]])
-        val json  = codec.encodeJson(value, None).toString
-        codec.decodeJson(json) match
-          case Left(error) => throw new IllegalArgumentException(error)
-          case Right(_)    => ()
-      }
-      .mapError(e => EclipseStoreError.QueryError(s"Schema validation failed for $label", Some(e)))
+      .fromEither(codec.decodeJson(json))
+      .as(())
+      .mapError(error => EclipseStoreError.QueryError(s"Schema validation failed for $label: $error", None))
 
   override def store[K: Schema, V: Schema](key: K, value: V): IO[EclipseStoreError, Unit] =
     validate(key, "key") *> validate(value, "value") *> underlying.put(key, value)
@@ -53,6 +64,7 @@ final case class TypedStoreLive(underlying: EclipseStoreService) extends TypedSt
     validate(value, "value") *> underlying.persist(value)
 
 object TypedStore:
+  /** Layer constructor for `TypedStore`. */
   val live: ZLayer[EclipseStoreService, Nothing, TypedStore] =
     ZLayer.fromFunction(TypedStoreLive.apply)
 

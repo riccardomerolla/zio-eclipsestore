@@ -5,8 +5,7 @@ import java.nio.file.{ Files, Path }
 import scala.jdk.CollectionConverters.*
 
 import zio.*
-import zio.schema.derived
-import zio.schema.Schema
+import zio.schema.{ Schema, derived }
 import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }

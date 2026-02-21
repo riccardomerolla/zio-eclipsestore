@@ -92,11 +92,11 @@ object SchemaRootDescriptorIntegrationSpec extends ZIOSpecDefault:
           yield assertTrue(
             out.exists(v =>
               v.id.toString == "Some(entry-10)" &&
-                v.sender == "Riccardo" &&
-                v.senderType == SenderType.User() &&
-                v.messageType == MessageType.Text() &&
-                v.metadata.toString.startsWith("None") &&
-                v.createdAt == Instant.ofEpochMilli(1_723_456_789_123L)
+              v.sender == "Riccardo" &&
+              v.senderType == SenderType.User() &&
+              v.messageType == MessageType.Text() &&
+              v.metadata.toString.startsWith("None") &&
+              v.createdAt == Instant.ofEpochMilli(1_723_456_789_123L)
             )
           )
         }

@@ -620,7 +620,7 @@ object EclipseStoreService:
 
   private[eclipsestore] def mergedTypeHandlers(config: EclipseStoreConfig): Chunk[PersistenceTypeHandler[Binary, ?]] =
     val manual = config.customTypeHandlers
-    val auto =
+    val auto   =
       if config.autoRegisterSchemaHandlers then schemaDerivedHandlers(config.rootDescriptors)
       else Chunk.empty
     dedupeByType(manual ++ auto)
@@ -634,10 +634,11 @@ object EclipseStoreService:
           SchemaBinaryCodec
             .handlers(schema.asInstanceOf[zio.schema.Schema[Any]], runtimeClass.asInstanceOf[Class[Any]])
             .asInstanceOf[Chunk[PersistenceTypeHandler[Binary, ?]]]
-        case _                                 => Chunk.empty
+        case _                                  => Chunk.empty
     })
 
-  private def dedupeByType(handlers: Chunk[PersistenceTypeHandler[Binary, ?]]): Chunk[PersistenceTypeHandler[Binary, ?]] =
+  private def dedupeByType(handlers: Chunk[PersistenceTypeHandler[Binary, ?]])
+    : Chunk[PersistenceTypeHandler[Binary, ?]] =
     handlers.foldLeft((Chunk.empty[PersistenceTypeHandler[Binary, ?]], Set.empty[Class[?]])) {
       case ((acc, seen), handler) =>
         val tpe = handler.`type`()

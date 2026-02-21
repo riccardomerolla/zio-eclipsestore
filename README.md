@@ -21,6 +21,64 @@ A ZIO-based library for type-safe, efficient, and boilerplate-free access to [Ec
 - **ZIO Config Integration**: Load `EclipseStoreConfig` from HOCON/resources via zio-config
 - **Effect-Oriented**: All operations are ZIO effects for composability
 
+## Schema Integration
+
+zio-eclipsestore now supports schema-driven handler registration and a typed high-level API.
+
+```mermaid
+flowchart LR
+  A["Domain Models (derives Schema)"] --> B["RootDescriptor.fromSchema"]
+  B --> C["EclipseStoreService.live startup"]
+  C --> D["SchemaBinaryCodec.handlers"]
+  D --> E["Auto-register BinaryTypeHandlers"]
+  E --> F["Persistence Foundation"]
+  F --> G["TypedStore (store/fetch/typedRoot)"]
+```
+
+### Manual Handlers -> Schema Migration
+
+```scala
+// Before: manual handler wiring
+final class Employee(var id: String, var salary: Double)
+val handler = org.eclipse.serializer.persistence.binary.types.Binary.TypeHandler(
+  classOf[Employee],
+  org.eclipse.serializer.persistence.binary.types.Binary.Field(
+    classOf[String],
+    "id",
+    (e: Employee) => e.id,
+    (e: Employee, v: String) => e.id = v,
+  ),
+)
+
+val before = EclipseStoreConfig(
+  storageTarget = StorageTarget.FileSystem(path),
+  customTypeHandlers = Chunk(handler),
+)
+
+// After: schema-derived handlers
+case class Employee(id: String, salary: Double) derives Schema
+
+val after = EclipseStoreConfig(
+  storageTarget = StorageTarget.FileSystem(path),
+  rootDescriptors = Chunk(
+    RootDescriptor.fromSchema("employees", () => List.empty[Employee])
+  ),
+)
+```
+
+### TypedStore API
+
+`TypedStore` gives schema-validated calls on top of `EclipseStoreService`:
+
+```scala
+for
+  _     <- TypedStore.store("book:1", book)
+  found <- TypedStore.fetch[String, Book]("book:1")
+  root  <- TypedStore.typedRoot(BookstoreRoot.descriptor)
+  _     <- TypedStore.storePersist(root)
+yield found
+```
+
 ## Version Compatibility
 
 | zio-eclipsestore | EclipseStore | Scala | ZIO | Status |
@@ -180,6 +238,8 @@ Run them with `sbt "runMain full.qualified.ClassName"`.
 The `BookstoreServer` example reimplements the backend portion of EclipseStore’s [Bookstore demo](https://github.com/eclipse-store/bookstore-demo) using:
 
 - `zio-eclipsestore` for persistence and typed roots
+- Schema-driven handler registration via `RootDescriptor.fromSchema`
+- `TypedStore` for schema-aware repository operations
 - `zio-http` for the REST API
 - `zio-json` codecs for request/response bodies
 
@@ -200,6 +260,21 @@ Default port: `8080`. Available routes:
 | `DELETE /books/{id}` | Remove a book and persist the root |
 
 All write operations automatically persist the `BookstoreRoot` and you can trigger checkpoints/backups via `EclipseStoreService` if desired.
+
+### Chat Models Schema Demo
+
+`io.github.riccardomerolla.zio.eclipsestore.examples.chatmodels.ChatModelsSchemaApp` demonstrates:
+
+- `ConversationEntry` with `Option[String]`, `Instant`, and enums
+- `ChatConversation` with nested `List[ConversationEntry]`
+- `AgentIssue` with multiple enums and optional fields
+- Store -> restart -> retrieve roundtrip with auto-derived handlers
+
+Run it with:
+
+```bash
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.chatmodels.ChatModelsSchemaApp"
+```
 
 ### GigaMap Module
 

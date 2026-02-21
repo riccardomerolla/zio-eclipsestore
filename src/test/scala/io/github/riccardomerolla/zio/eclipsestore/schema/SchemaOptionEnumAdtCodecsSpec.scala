@@ -15,7 +15,10 @@ import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
 object SchemaOptionEnumAdtCodecsSpec extends ZIOSpecDefault:
-  private def withService[A](dir: Path, handlers: Chunk[org.eclipse.serializer.persistence.binary.types.BinaryTypeHandler[?]])(
+  private def withService[A](
+    dir: Path,
+    handlers: Chunk[org.eclipse.serializer.persistence.binary.types.BinaryTypeHandler[?]],
+  )(
     use: EclipseStoreService => ZIO[Any, EclipseStoreError, A]
   ) =
     val cfg = EclipseStoreConfig(
@@ -31,17 +34,19 @@ object SchemaOptionEnumAdtCodecsSpec extends ZIOSpecDefault:
       yield out
     }
 
-  private def restartRoundtrip[A: ClassTag](key: String, value: A, schema: Schema[A]): ZIO[Any, EclipseStoreError, Option[A]] =
+  private def restartRoundtrip[A: ClassTag](key: String, value: A, schema: Schema[A])
+    : ZIO[Any, EclipseStoreError, Option[A]] =
     ZIO.scoped {
       for
-        dir <- ZIO.acquireRelease(
-                 ZIO.attempt(Files.createTempDirectory("schema-adt-codecs"))
-                   .mapError(e => EclipseStoreError.InitializationError("Failed to create temp directory", Some(e)))
-               )(path =>
-                 ZIO.attempt {
-                   if Files.exists(path) then Files.walk(path).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
-                 }.orDie
-               )
+        dir     <- ZIO.acquireRelease(
+                     ZIO.attempt(Files.createTempDirectory("schema-adt-codecs"))
+                       .mapError(e => EclipseStoreError.InitializationError("Failed to create temp directory", Some(e)))
+                   )(path =>
+                     ZIO.attempt {
+                       if Files.exists(path) then
+                         Files.walk(path).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
+                     }.orDie
+                   )
         handlers = SchemaBinaryCodec.handlers(schema)
         _       <- withService(dir, handlers)(_.put(key, value))
         out     <- withService(dir, handlers)(_.get[String, A](key))
@@ -107,11 +112,11 @@ object SchemaOptionEnumAdtCodecsSpec extends ZIOSpecDefault:
           assertTrue(
             out.exists(v =>
               v.id.toString == "Some(entry-1)" &&
-                v.sender == "Riccardo" &&
-                v.senderType == SenderType.User() &&
-                v.messageType == MessageType.Text() &&
-                v.metadata.toString.startsWith("None") &&
-                v.createdAt == Instant.ofEpochMilli(1_723_456_789_123L)
+              v.sender == "Riccardo" &&
+              v.senderType == SenderType.User() &&
+              v.messageType == MessageType.Text() &&
+              v.metadata.toString.startsWith("None") &&
+              v.createdAt == Instant.ofEpochMilli(1_723_456_789_123L)
             )
           )
         )

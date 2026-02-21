@@ -17,7 +17,10 @@ import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
 object SchemaStandardTypeCodecsSpec extends ZIOSpecDefault:
-  private def withService[A](dir: Path, schemaHandler: org.eclipse.serializer.persistence.binary.types.BinaryTypeHandler[?])(
+  private def withService[A](
+    dir: Path,
+    schemaHandler: org.eclipse.serializer.persistence.binary.types.BinaryTypeHandler[?],
+  )(
     use: EclipseStoreService => ZIO[Any, EclipseStoreError, A]
   ) =
     val cfg = EclipseStoreConfig(
@@ -45,7 +48,8 @@ object SchemaStandardTypeCodecsSpec extends ZIOSpecDefault:
                    .mapError(e => EclipseStoreError.InitializationError("Failed to create temp directory", Some(e)))
                )(path =>
                  ZIO.attempt {
-                   if Files.exists(path) then Files.walk(path).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
+                   if Files.exists(path) then
+                     Files.walk(path).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
                  }.orDie
                )
         out <- withService(dir, SchemaBinaryCodec.handler(schema)) { svc =>

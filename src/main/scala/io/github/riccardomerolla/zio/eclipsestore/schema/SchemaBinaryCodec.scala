@@ -24,6 +24,7 @@ object SchemaBinaryCodec:
     val runtimeClass = boxedClass(summon[ClassTag[A]].runtimeClass).asInstanceOf[Class[A]]
     handler(schema, runtimeClass, typeId)
 
+  /** Derives a `BinaryTypeHandler[A]` from `Schema[A]` with explicit runtime class and type id. */
   def handler[A](schema: Schema[A], runtimeClass: Class[A], typeId: Long): BinaryTypeHandler[A] =
     val boxedRuntimeClass = boxedClass(runtimeClass).asInstanceOf[Class[A]]
     SchemaAlgebraicTypeCodecs
@@ -31,9 +32,11 @@ object SchemaBinaryCodec:
       .orElse(SchemaStandardTypeCodecs.handlerFor(boxedRuntimeClass, schema, typeId))
       .getOrElse(jsonPayloadHandler(boxedRuntimeClass, schema, typeId))
 
+  /** Derives a `BinaryTypeHandler[A]` from `Schema[A]` with explicit runtime class and deterministic type id. */
   def handler[A](schema: Schema[A], runtimeClass: Class[A]): BinaryTypeHandler[A] =
     handler(schema, runtimeClass, stableTypeId(schema))
 
+  /** Derives all handlers needed for a schema and runtime class, including enum case subtype handlers. */
   def handlers[A](schema: Schema[A], runtimeClass: Class[A]): Chunk[BinaryTypeHandler[?]] =
     val primary = handler(schema, runtimeClass)
     val extras  = enumCaseSubtypeHandlers(schema)
@@ -67,7 +70,8 @@ object SchemaBinaryCodec:
     val id   = java.lang.Integer.toUnsignedLong(hash)
     if id == 0L then 1L else id
 
-  private[schema] def jsonPayloadHandler[A](runtimeClass: Class[A], schema: Schema[A], typeId: Long): BinaryTypeHandler[A] =
+  private[schema] def jsonPayloadHandler[A](runtimeClass: Class[A], schema: Schema[A], typeId: Long)
+    : BinaryTypeHandler[A] =
     new SchemaBackedBinaryTypeHandler[A](runtimeClass, schema).initialize(typeId).asInstanceOf[BinaryTypeHandler[A]]
 
   private def enumCaseSubtypeHandlers[A](schema: Schema[A]): Chunk[BinaryTypeHandler[?]] =
@@ -77,14 +81,14 @@ object SchemaBinaryCodec:
           enumCase.schema.defaultValue.toOption match
             case None              => acc
             case Some(defaultCase) =>
-              val instance   = enumCase.construct(defaultCase).asInstanceOf[AnyRef]
-              val caseClass  = instance.getClass.asInstanceOf[Class[A]]
+              val instance  = enumCase.construct(defaultCase).asInstanceOf[AnyRef]
+              val caseClass = instance.getClass.asInstanceOf[Class[A]]
               if caseClass.getName.contains("$$anon$") then acc
               else
                 val caseTypeId = stableTypeIdForClass(schema, caseClass.getName)
                 acc :+ jsonPayloadHandler(caseClass, schema, caseTypeId)
         }
-      case _                               => Chunk.empty
+      case _                                     => Chunk.empty
 
   private def boxedClass(cls: Class[?]): Class[?] =
     if !cls.isPrimitive then cls
@@ -99,13 +103,13 @@ object SchemaBinaryCodec:
     else if cls == java.lang.Void.TYPE then classOf[scala.runtime.BoxedUnit]
     else cls
 
-  private final class SchemaBackedBinaryTypeHandler[A](
+  final private class SchemaBackedBinaryTypeHandler[A](
     runtimeClass: Class[A],
     schema: Schema[A],
   ) extends AbstractBinaryHandlerCustomValueVariableLength[A, Int](
-        runtimeClass,
-        AbstractBinaryHandlerCustom.CustomFields(AbstractBinaryHandlerCustom.chars(PayloadField)),
-      ):
+      runtimeClass,
+      AbstractBinaryHandlerCustom.CustomFields(AbstractBinaryHandlerCustom.chars(PayloadField)),
+    ):
     private val codec = JsonCodec.jsonCodec(schema)
 
     override def store(
@@ -137,7 +141,7 @@ object SchemaBinaryCodec:
       codec.encodeJson(value, None).toString
 
     private def decode(json: String): A =
-      codec.decodeJson(json) match
-        case Right(value) => value
-        case Left(error)  =>
-          throw new IllegalStateException(s"Failed to decode schema payload for ${runtimeClass.getName}: $error")
+      codec.decodeJson(json).fold(
+        error => scala.sys.error(s"Failed to decode schema payload for ${runtimeClass.getName}: $error"),
+        identity,
+      )

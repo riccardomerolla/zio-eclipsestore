@@ -3,8 +3,7 @@ package io.github.riccardomerolla.zio.eclipsestore.schema
 import java.time.Instant
 
 import zio.*
-import zio.schema.Schema
-import zio.schema.derived
+import zio.schema.{ Schema, derived }
 import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor

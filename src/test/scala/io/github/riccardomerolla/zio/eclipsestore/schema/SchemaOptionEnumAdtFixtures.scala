@@ -2,8 +2,7 @@ package io.github.riccardomerolla.zio.eclipsestore.schema
 
 import java.time.Instant
 
-import zio.schema.Schema
-import zio.schema.derived
+import zio.schema.{ Schema, derived }
 
 enum MessageType derives Schema:
   case Text()
@@ -23,9 +22,9 @@ enum DeliveryMethod derives Schema:
 
 sealed trait Shape derives Schema
 object Shape:
-  final case class Circle(radius: Double) extends Shape derives Schema
+  final case class Circle(radius: Double)                   extends Shape derives Schema
   final case class Rectangle(width: Double, height: Double) extends Shape derives Schema
-  final case class Origin() extends Shape derives Schema
+  final case class Origin()                                 extends Shape derives Schema
 
 final case class Note(value: String, rank: Int) derives Schema
 

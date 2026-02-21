@@ -8,18 +8,7 @@ import scala.math.{ BigDecimal, BigInt }
 
 import zio.schema.Schema
 
-import org.eclipse.serializer.persistence.binary.java.lang.{
-  BinaryHandlerBoolean,
-  BinaryHandlerByte,
-  BinaryHandlerCharacter,
-  BinaryHandlerDouble,
-  BinaryHandlerFloat,
-  BinaryHandlerInteger,
-  BinaryHandlerLong,
-  BinaryHandlerNativeArray_byte,
-  BinaryHandlerShort,
-  BinaryHandlerString,
-}
+import org.eclipse.serializer.persistence.binary.java.lang.*
 import org.eclipse.serializer.persistence.binary.java.net.{ BinaryHandlerURI, BinaryHandlerURL }
 import org.eclipse.serializer.persistence.binary.java.time.{ BinaryHandlerLocalDate, BinaryHandlerPeriod }
 import org.eclipse.serializer.persistence.binary.types.{
@@ -42,16 +31,24 @@ private[schema] object SchemaStandardTypeCodecs:
     else if cls == classOf[java.lang.Long] then Some(BinaryHandlerLong.New().asInstanceOf[BinaryTypeHandler[A]])
     else if cls == classOf[java.lang.Float] then Some(BinaryHandlerFloat.New().asInstanceOf[BinaryTypeHandler[A]])
     else if cls == classOf[java.lang.Double] then Some(BinaryHandlerDouble.New().asInstanceOf[BinaryTypeHandler[A]])
-    else if cls == classOf[java.lang.Character] then Some(BinaryHandlerCharacter.New().asInstanceOf[BinaryTypeHandler[A]])
+    else if cls == classOf[java.lang.Character] then
+      Some(BinaryHandlerCharacter.New().asInstanceOf[BinaryTypeHandler[A]])
     else if cls == classOf[java.math.BigDecimal] then
-      Some(initCast[A](stringEncoded(classOf[java.math.BigDecimal], _.toString, s => new java.math.BigDecimal(s)), typeId))
+      Some(initCast[A](
+        stringEncoded(classOf[java.math.BigDecimal], _.toString, s => new java.math.BigDecimal(s)),
+        typeId,
+      ))
     else if cls == classOf[java.math.BigInteger] then
-      Some(initCast[A](stringEncoded(classOf[java.math.BigInteger], _.toString, s => new java.math.BigInteger(s)), typeId))
+      Some(initCast[A](
+        stringEncoded(classOf[java.math.BigInteger], _.toString, s => new java.math.BigInteger(s)),
+        typeId,
+      ))
     else if cls == classOf[URI] then Some(BinaryHandlerURI.New().asInstanceOf[BinaryTypeHandler[A]])
     else if cls == classOf[URL] then Some(BinaryHandlerURL.New().asInstanceOf[BinaryTypeHandler[A]])
     else if cls == classOf[LocalDate] then Some(BinaryHandlerLocalDate.New().asInstanceOf[BinaryTypeHandler[A]])
     else if cls == classOf[Period] then Some(BinaryHandlerPeriod.New().asInstanceOf[BinaryTypeHandler[A]])
-    else if cls == classOf[scala.runtime.BoxedUnit] then Some(SchemaBinaryCodec.jsonPayloadHandler(runtimeClass, schema, typeId))
+    else if cls == classOf[scala.runtime.BoxedUnit] then
+      Some(SchemaBinaryCodec.jsonPayloadHandler(runtimeClass, schema, typeId))
     else if cls == classOf[Instant] then Some(initCast[A](new InstantHandler(), typeId))
     else if cls == classOf[BigDecimal] then Some(initCast[A](new ScalaBigDecimalHandler(), typeId))
     else if cls == classOf[BigInt] then Some(initCast[A](new ScalaBigIntHandler(), typeId))
@@ -66,7 +63,8 @@ private[schema] object SchemaStandardTypeCodecs:
       Some(initCast[A](stringEncoded(classOf[OffsetDateTime], _.toString, OffsetDateTime.parse), typeId))
     else if cls == classOf[java.time.Duration] then
       Some(initCast[A](stringEncoded(classOf[java.time.Duration], _.toString, java.time.Duration.parse), typeId))
-    else if cls == classOf[Array[Byte]] then Some(BinaryHandlerNativeArray_byte.New().asInstanceOf[BinaryTypeHandler[A]])
+    else if cls == classOf[Array[Byte]] then
+      Some(BinaryHandlerNativeArray_byte.New().asInstanceOf[BinaryTypeHandler[A]])
     else if cls.getName == "zio.Chunk" || cls.getName == "zio.NonEmptyChunk" then
       Some(SchemaBinaryCodec.jsonPayloadHandler(runtimeClass, schema, typeId))
     else None
@@ -91,11 +89,11 @@ private[schema] object SchemaStandardTypeCodecs:
       override def getValidationStateFromBinary(data: Binary): String =
         data.buildString()
 
-  private final class InstantHandler
-      extends AbstractBinaryHandlerCustomValueFixedLength[Instant, java.lang.Long](
-        classOf[Instant],
-        AbstractBinaryHandlerCustom.defineValueType(java.lang.Long.TYPE),
-      ):
+  final private class InstantHandler
+    extends AbstractBinaryHandlerCustomValueFixedLength[Instant, java.lang.Long](
+      classOf[Instant],
+      AbstractBinaryHandlerCustom.defineValueType(java.lang.Long.TYPE),
+    ):
     override def store(
       data: Binary,
       instance: Instant,
@@ -113,11 +111,11 @@ private[schema] object SchemaStandardTypeCodecs:
     override def getValidationStateFromBinary(data: Binary): java.lang.Long =
       data.buildLong()
 
-  private final class ScalaBigDecimalHandler
-      extends AbstractBinaryHandlerCustomValueVariableLength[BigDecimal, String](
-        classOf[BigDecimal],
-        AbstractBinaryHandlerCustom.CustomFields(AbstractBinaryHandlerCustom.chars("value")),
-      ):
+  final private class ScalaBigDecimalHandler
+    extends AbstractBinaryHandlerCustomValueVariableLength[BigDecimal, String](
+      classOf[BigDecimal],
+      AbstractBinaryHandlerCustom.CustomFields(AbstractBinaryHandlerCustom.chars("value")),
+    ):
     override def store(
       data: Binary,
       instance: BigDecimal,
@@ -135,11 +133,11 @@ private[schema] object SchemaStandardTypeCodecs:
     override def getValidationStateFromBinary(data: Binary): String =
       data.buildString()
 
-  private final class ScalaBigIntHandler
-      extends AbstractBinaryHandlerCustomValueVariableLength[BigInt, String](
-        classOf[BigInt],
-        AbstractBinaryHandlerCustom.CustomFields(AbstractBinaryHandlerCustom.chars("value")),
-      ):
+  final private class ScalaBigIntHandler
+    extends AbstractBinaryHandlerCustomValueVariableLength[BigInt, String](
+      classOf[BigInt],
+      AbstractBinaryHandlerCustom.CustomFields(AbstractBinaryHandlerCustom.chars("value")),
+    ):
     override def store(
       data: Binary,
       instance: BigInt,
@@ -157,14 +155,14 @@ private[schema] object SchemaStandardTypeCodecs:
     override def getValidationStateFromBinary(data: Binary): String =
       data.buildString()
 
-  private final class UuidHandler
-      extends AbstractBinaryHandlerCustomValueFixedLength[UUID, String](
-        classOf[UUID],
-        AbstractBinaryHandlerCustom.CustomFields(
-          AbstractBinaryHandlerCustom.CustomField(java.lang.Long.TYPE, "mostSignificantBits"),
-          AbstractBinaryHandlerCustom.CustomField(java.lang.Long.TYPE, "leastSignificantBits"),
-        ),
-      ):
+  final private class UuidHandler
+    extends AbstractBinaryHandlerCustomValueFixedLength[UUID, String](
+      classOf[UUID],
+      AbstractBinaryHandlerCustom.CustomFields(
+        AbstractBinaryHandlerCustom.CustomField(java.lang.Long.TYPE, "mostSignificantBits"),
+        AbstractBinaryHandlerCustom.CustomField(java.lang.Long.TYPE, "leastSignificantBits"),
+      ),
+    ):
     private val MsbOffset   = 0L
     private val LsbOffset   = 8L
     private val BinaryBytes = 16L

@@ -2,6 +2,7 @@ package io.github.riccardomerolla.zio.eclipsestore.schema
 
 import java.time.Instant
 
+import zio.Chunk
 import zio.schema.{ Schema, derived }
 
 enum MessageType derives Schema:
@@ -40,4 +41,32 @@ final case class ConversationEntry(
   messageType: MessageType,
   metadata: Option[String],
   createdAt: Instant,
+) derives Schema
+
+final case class ChatConversation(
+  id: String,
+  title: Option[String],
+  messages: List[ConversationEntry],
+  archivedAt: Option[Instant],
+) derives Schema
+
+enum IssueState derives Schema:
+  case Open()
+  case InProgress()
+  case Closed(reason: Option[String])
+
+enum IssueSeverity derives Schema:
+  case Low()
+  case Medium()
+  case High()
+
+final case class AgentIssue(
+  id: String,
+  conversationId: Option[String],
+  state: IssueState,
+  severity: IssueSeverity,
+  summary: String,
+  owner: Option[String],
+  labels: Chunk[String],
+  dueAt: Option[Instant],
 ) derives Schema

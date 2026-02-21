@@ -26,6 +26,9 @@ object TypedStoreSpec extends ZIOSpecDefault:
           after  <- TypedStore.fetch[String, User]("user:u1")
         yield assertTrue(before.contains(user), after.isEmpty)
       },
+      test("fetch returns None for missing key") {
+        TypedStore.fetch[String, User]("missing-key").map(out => assertTrue(out.isEmpty))
+      },
       test("fetchAll / streamAll return typed collections") {
         val a = User("u1", "alice", Instant.ofEpochMilli(1L))
         val b = User("u2", "bob", Instant.ofEpochMilli(2L))

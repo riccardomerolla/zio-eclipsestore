@@ -22,6 +22,26 @@ object SchemaBinaryCodec:
   /** Derives a `BinaryTypeHandler[A]` from `Schema[A]` using an explicit type id. */
   def handler[A: ClassTag](schema: Schema[A], typeId: Long): BinaryTypeHandler[A] =
     val runtimeClass = boxedClass(summon[ClassTag[A]].runtimeClass).asInstanceOf[Class[A]]
+    handler(schema, runtimeClass, typeId)
+
+  def handler[A](schema: Schema[A], runtimeClass: Class[A], typeId: Long): BinaryTypeHandler[A] =
+    val boxedRuntimeClass = boxedClass(runtimeClass).asInstanceOf[Class[A]]
+    SchemaAlgebraicTypeCodecs
+      .handlerFor(boxedRuntimeClass, schema, typeId)
+      .orElse(SchemaStandardTypeCodecs.handlerFor(boxedRuntimeClass, schema, typeId))
+      .getOrElse(jsonPayloadHandler(boxedRuntimeClass, schema, typeId))
+
+  def handler[A](schema: Schema[A], runtimeClass: Class[A]): BinaryTypeHandler[A] =
+    handler(schema, runtimeClass, stableTypeId(schema))
+
+  def handlers[A](schema: Schema[A], runtimeClass: Class[A]): Chunk[BinaryTypeHandler[?]] =
+    val primary = handler(schema, runtimeClass)
+    val extras  = enumCaseSubtypeHandlers(schema)
+    Chunk.single(primary) ++ extras.filterNot(_.`type`() == primary.`type`())
+
+  /** Derives a `BinaryTypeHandler[A]` from `Schema[A]` using an explicit type id. */
+  private def handlerFromTag[A: ClassTag](schema: Schema[A], typeId: Long): BinaryTypeHandler[A] =
+    val runtimeClass = boxedClass(summon[ClassTag[A]].runtimeClass).asInstanceOf[Class[A]]
     SchemaAlgebraicTypeCodecs
       .handlerFor(runtimeClass, schema, typeId)
       .orElse(SchemaStandardTypeCodecs.handlerFor(runtimeClass, schema, typeId))
@@ -29,7 +49,7 @@ object SchemaBinaryCodec:
 
   /** Derives a `BinaryTypeHandler[A]` from `Schema[A]` using a deterministic type id. */
   def handler[A: ClassTag](schema: Schema[A]): BinaryTypeHandler[A] =
-    handler(schema, stableTypeId(schema))
+    handlerFromTag(schema, stableTypeId(schema))
 
   /** Derives all handlers needed for a schema. For enums, this includes case runtime subtype handlers. */
   def handlers[A: ClassTag](schema: Schema[A]): Chunk[BinaryTypeHandler[?]] =

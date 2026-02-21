@@ -21,6 +21,7 @@ object EclipseStoreConfigZIO:
     backupTruncationDirectory: Option[Path],
     backupDeletionDirectory: Option[Path],
     backupExternalProperties: Option[Map[String, String]],
+    autoRegisterSchemaHandlers: Option[Boolean],
   )
 
   private given zio.Config[Path] =
@@ -113,6 +114,7 @@ object EclipseStoreConfigZIO:
       backupExternalProperties = in.backupExternalProperties.getOrElse(Map.empty),
       backupTarget = defaults.backupTarget,
       customTypeHandlers = defaults.customTypeHandlers,
+      autoRegisterSchemaHandlers = in.autoRegisterSchemaHandlers.getOrElse(defaults.autoRegisterSchemaHandlers),
       eagerStoringEvaluator = defaults.eagerStoringEvaluator,
     )
 

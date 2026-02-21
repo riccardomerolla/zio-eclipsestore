@@ -113,4 +113,49 @@ object SchemaRootDescriptorIntegrationSpec extends ZIOSpecDefault:
 
         assertTrue(count == 1)
       },
+      test("autoRegisterSchemaHandlers=false disables schema-derived handlers") {
+        val descriptor = RootDescriptor.fromSchema[String]("string-root", () => "init")
+        val config     = EclipseStoreConfig(
+          storageTarget = StorageTarget.InMemory("schema-root-disabled"),
+          rootDescriptors = Chunk.single(descriptor),
+          autoRegisterSchemaHandlers = false,
+        )
+        val merged     = EclipseStoreService.mergedTypeHandlers(config)
+
+        assertTrue(merged.isEmpty)
+      },
+      test("schema-derived handlers are deduplicated by runtime type across roots") {
+        val root1  = RootDescriptor.fromSchema[ConversationEntry](
+          id = "conversation-root-1",
+          initializer = () =>
+            ConversationEntry(
+              id = None,
+              sender = "system",
+              senderType = SenderType.System(),
+              messageType = MessageType.Status(),
+              metadata = None,
+              createdAt = Instant.EPOCH,
+            ),
+        )
+        val root2  = RootDescriptor.fromSchema[ConversationEntry](
+          id = "conversation-root-2",
+          initializer = () =>
+            ConversationEntry(
+              id = None,
+              sender = "assistant",
+              senderType = SenderType.Assistant(),
+              messageType = MessageType.Status(),
+              metadata = None,
+              createdAt = Instant.EPOCH,
+            ),
+        )
+        val config = EclipseStoreConfig(
+          storageTarget = StorageTarget.InMemory("schema-root-dedup"),
+          rootDescriptors = Chunk(root1, root2),
+        )
+        val merged = EclipseStoreService.mergedTypeHandlers(config)
+        val count  = merged.count(_.`type`() == classOf[ConversationEntry])
+
+        assertTrue(count == 1)
+      },
     )

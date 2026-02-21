@@ -20,6 +20,7 @@ object EclipseStoreConfigZIOSpec extends ZIOSpecDefault:
                           assertTrue(
                             cfg.maxParallelism == 8,
                             cfg.batchSize == 50,
+                            !cfg.autoRegisterSchemaHandlers,
                             path == Path.of("/tmp/zio-eclipsestore-config-test"),
                             cfg
                               .backupDirectory

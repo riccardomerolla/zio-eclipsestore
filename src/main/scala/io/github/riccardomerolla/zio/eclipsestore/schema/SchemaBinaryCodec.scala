@@ -17,26 +17,54 @@ import org.eclipse.serializer.persistence.types.{ PersistenceLoadHandler, Persis
 
 /** Derives EclipseStore binary type handlers from ZIO Schema. */
 object SchemaBinaryCodec:
-  private val PayloadField = "schemaPayload"
+  private val PayloadField = "schemaJsonPayload"
 
   /** Derives a `BinaryTypeHandler[A]` from `Schema[A]` using an explicit type id. */
   def handler[A: ClassTag](schema: Schema[A], typeId: Long): BinaryTypeHandler[A] =
     val runtimeClass = boxedClass(summon[ClassTag[A]].runtimeClass).asInstanceOf[Class[A]]
-    SchemaStandardTypeCodecs
+    SchemaAlgebraicTypeCodecs
       .handlerFor(runtimeClass, schema, typeId)
+      .orElse(SchemaStandardTypeCodecs.handlerFor(runtimeClass, schema, typeId))
       .getOrElse(jsonPayloadHandler(runtimeClass, schema, typeId))
 
   /** Derives a `BinaryTypeHandler[A]` from `Schema[A]` using a deterministic type id. */
   def handler[A: ClassTag](schema: Schema[A]): BinaryTypeHandler[A] =
     handler(schema, stableTypeId(schema))
 
+  /** Derives all handlers needed for a schema. For enums, this includes case runtime subtype handlers. */
+  def handlers[A: ClassTag](schema: Schema[A]): Chunk[BinaryTypeHandler[?]] =
+    val primary = handler(schema)
+    val extras  = enumCaseSubtypeHandlers(schema)
+    Chunk.single(primary) ++ extras.filterNot(_.`type`() == primary.`type`())
+
   private def stableTypeId[A](schema: Schema[A]): Long =
     val hash = MurmurHash3.stringHash(schema.ast.toString)
     val id   = java.lang.Integer.toUnsignedLong(hash)
     if id == 0L then 1L else id
 
+  private def stableTypeIdForClass[A](schema: Schema[A], className: String): Long =
+    val hash = MurmurHash3.stringHash(s"${schema.ast}|$className")
+    val id   = java.lang.Integer.toUnsignedLong(hash)
+    if id == 0L then 1L else id
+
   private[schema] def jsonPayloadHandler[A](runtimeClass: Class[A], schema: Schema[A], typeId: Long): BinaryTypeHandler[A] =
     new SchemaBackedBinaryTypeHandler[A](runtimeClass, schema).initialize(typeId).asInstanceOf[BinaryTypeHandler[A]]
+
+  private def enumCaseSubtypeHandlers[A](schema: Schema[A]): Chunk[BinaryTypeHandler[?]] =
+    schema match
+      case enumSchema: Schema.Enum[A @unchecked] =>
+        enumSchema.cases.foldLeft(Chunk.empty[BinaryTypeHandler[?]]) { (acc, enumCase) =>
+          enumCase.schema.defaultValue.toOption match
+            case None              => acc
+            case Some(defaultCase) =>
+              val instance   = enumCase.construct(defaultCase).asInstanceOf[AnyRef]
+              val caseClass  = instance.getClass.asInstanceOf[Class[A]]
+              if caseClass.getName.contains("$$anon$") then acc
+              else
+                val caseTypeId = stableTypeIdForClass(schema, caseClass.getName)
+                acc :+ jsonPayloadHandler(caseClass, schema, caseTypeId)
+        }
+      case _                               => Chunk.empty
 
   private def boxedClass(cls: Class[?]): Class[?] =
     if !cls.isPrimitive then cls
@@ -56,9 +84,9 @@ object SchemaBinaryCodec:
     schema: Schema[A],
   ) extends AbstractBinaryHandlerCustomValueVariableLength[A, Int](
         runtimeClass,
-        AbstractBinaryHandlerCustom.CustomFields(AbstractBinaryHandlerCustom.bytes(PayloadField)),
+        AbstractBinaryHandlerCustom.CustomFields(AbstractBinaryHandlerCustom.chars(PayloadField)),
       ):
-    private val codec = JsonCodec.schemaBasedBinaryCodec(schema)
+    private val codec = JsonCodec.jsonCodec(schema)
 
     override def store(
       data: Binary,
@@ -66,23 +94,30 @@ object SchemaBinaryCodec:
       objectId: Long,
       handler: PersistenceStoreHandler[Binary],
     ): Unit =
-      val encoded = encode(instance)
-      data.store_bytes(typeId(), objectId, encoded)
+      data.storeStringSingleValue(typeId(), objectId, encode(instance))
 
     override def create(data: Binary, handler: PersistenceLoadHandler): A =
-      decode(data.create_bytes())
+      decode(data.buildString())
 
     override def getValidationStateFromInstance(instance: A): Int =
-      MurmurHash3.bytesHash(encode(instance))
+      MurmurHash3.stringHash(encode(instance))
 
     override def getValidationStateFromBinary(data: Binary): Int =
-      MurmurHash3.bytesHash(data.build_bytes())
+      MurmurHash3.stringHash(data.buildString())
 
-    private def encode(value: A): Array[Byte] =
-      codec.encode(value).asInstanceOf[Chunk[Byte]].toArray
+    override def guaranteeSpecificInstanceViablity(): Unit = ()
 
-    private def decode(bytes: Array[Byte]): A =
-      codec.decode(Chunk.fromArray(bytes)) match
+    override def isSpecificInstanceViable(): Boolean = true
+
+    override def guaranteeSubTypeInstanceViablity(): Unit = ()
+
+    override def isSubTypeInstanceViable(): Boolean = true
+
+    private def encode(value: A): String =
+      codec.encodeJson(value, None).toString
+
+    private def decode(json: String): A =
+      codec.decodeJson(json) match
         case Right(value) => value
         case Left(error)  =>
           throw new IllegalStateException(s"Failed to decode schema payload for ${runtimeClass.getName}: $error")

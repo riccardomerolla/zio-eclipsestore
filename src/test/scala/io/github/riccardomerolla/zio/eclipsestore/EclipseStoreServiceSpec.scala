@@ -253,20 +253,20 @@ object EclipseStoreServiceSpec extends ZIOSpecDefault:
       test("filesystem storage survives close + reopen with checkpointed kv-root data") {
         ZIO.scoped {
           for
-            path <- ZIO.attemptBlocking(Files.createTempDirectory("filesystem-reopen"))
-            _    <- ZIO.addFinalizer(ZIO.attemptBlocking(deleteDirectory(path)).orDie)
+            path    <- ZIO.attemptBlocking(Files.createTempDirectory("filesystem-reopen"))
+            _       <- ZIO.addFinalizer(ZIO.attemptBlocking(deleteDirectory(path)).orDie)
             rawLayer = ZLayer.succeed(EclipseStoreConfig.make(path)) >>> EclipseStoreService.live.fresh
-            _    <- (for
-                      _ <- EclipseStoreService.put("key1", "value1")
-                      _ <- EclipseStoreService.put("key2", "value2")
-                      _ <- EclipseStoreService.maintenance(LifecycleCommand.Checkpoint)
-                    yield ()).provideLayer(rawLayer)
-            out  <- (for
-                      _    <- EclipseStoreService.reloadRoots
-                      keys <- EclipseStoreService.streamKeys[String].runCollect
-                      v1   <- EclipseStoreService.get[String, String]("key1")
-                      v2   <- EclipseStoreService.get[String, String]("key2")
-                    yield (keys, v1, v2)).provideLayer(rawLayer)
+            _       <- (for
+                         _ <- EclipseStoreService.put("key1", "value1")
+                         _ <- EclipseStoreService.put("key2", "value2")
+                         _ <- EclipseStoreService.maintenance(LifecycleCommand.Checkpoint)
+                       yield ()).provideLayer(rawLayer)
+            out     <- (for
+                         _    <- EclipseStoreService.reloadRoots
+                         keys <- EclipseStoreService.streamKeys[String].runCollect
+                         v1   <- EclipseStoreService.get[String, String]("key1")
+                         v2   <- EclipseStoreService.get[String, String]("key2")
+                       yield (keys, v1, v2)).provideLayer(rawLayer)
           yield assertTrue(
             out._1.toSet == Set("key1", "key2"),
             out._2.contains("value1"),

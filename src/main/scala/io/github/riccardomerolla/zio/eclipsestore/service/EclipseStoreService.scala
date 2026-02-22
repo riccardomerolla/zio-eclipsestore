@@ -108,10 +108,36 @@ final case class EclipseStoreServiceLive(
   private def kvStore: ConcurrentHashMap[Any, Any] =
     rootContainer.ensure(keyValueDescriptor)
 
+  private def ensureLazyElementLoadedIfSupported(value: AnyRef): Unit =
+    val maybeMethod =
+      storageManager
+        .getClass
+        .getMethods
+        .find(m => m.getName == "ensureLazyElementLoaded" && m.getParameterCount == 1)
+    maybeMethod.foreach(_.invoke(storageManager, value))
+
+  private[service] def hydrateConfiguredRoots: IO[EclipseStoreError, Unit] =
+    ZIO
+      .attempt {
+        configuredDescriptors.foreach { descriptor =>
+          rootContainer
+            .get(descriptor.asInstanceOf[RootDescriptor[Any]])
+            .map(_.asInstanceOf[AnyRef])
+            .foreach(ensureLazyElementLoadedIfSupported)
+        }
+      }
+      .mapError(e => EclipseStoreError.ResourceError("Failed to hydrate lazy root elements", Some(e)))
+
   private def persistRootState: IO[EclipseStoreError, Unit] =
     ZIO
       .attempt {
+        configuredDescriptors.foreach { descriptor =>
+          rootContainer
+            .get(descriptor.asInstanceOf[RootDescriptor[Any]])
+            .foreach(value => storageManager.store(value.asInstanceOf[AnyRef]))
+        }
         storageManager.store(rootContainer.instanceState)
+        storageManager.store(rootContainer)
         storageManager.setRoot(rootContainer)
         storageManager.storeRoot()
       }
@@ -245,17 +271,15 @@ final case class EclipseStoreServiceLive(
     ZIO.foreachDiscard(values)(persist)
 
   override val reloadRoots: IO[EclipseStoreError, Unit] =
-    (for
-      _ <- ZIO.attempt {
-             storageManager.root() match
-               case container: RootContainer =>
-                 rootContainer.replaceWith(container)
-               case _                        => ()
-           }
+    for
       _ <- ZIO.foreachDiscard(configuredDescriptors)(descriptor =>
-             ZIO.attempt(rootContainer.ensure(descriptor.asInstanceOf[RootDescriptor[Any]]))
+             ZIO
+               .attempt(rootContainer.ensure(descriptor.asInstanceOf[RootDescriptor[Any]]))
+               .unit
+               .mapError(e => EclipseStoreError.ResourceError("Failed to reload roots", Some(e)))
            )
-    yield ()).mapError(e => EclipseStoreError.ResourceError("Failed to reload roots", Some(e)))
+      _ <- hydrateConfiguredRoots
+    yield ()
 
   override def maintenance(command: LifecycleCommand): IO[EclipseStoreError, LifecycleStatus] =
     command match
@@ -542,6 +566,7 @@ object EclipseStoreService:
                                configuredDescriptors = descriptorChunk,
                                keyValueDescriptor = keyValueDescriptor,
                              )
+        _                 <- service.hydrateConfiguredRoots
         _                 <- statusRef.set(LifecycleStatus.Running(service.startedAt))
         _                 <- ZIO.addFinalizer(
                                service

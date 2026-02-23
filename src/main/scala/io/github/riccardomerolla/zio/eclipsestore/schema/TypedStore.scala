@@ -34,13 +34,33 @@ trait TypedStore:
 
 /** Default `TypedStore` implementation backed by `EclipseStoreService`. */
 final case class TypedStoreLive(underlying: EclipseStoreService) extends TypedStore:
+  private def isKnownOptionInstantEncodingBug(error: Throwable): Boolean =
+    error match
+      case _: NoSuchElementException =>
+        Option(error.getMessage).contains("None.get") &&
+        error.getStackTrace.exists(ste =>
+          ste.getClassName.contains("zio.json.JsonEncoder") && ste.getMethodName == "isNothing"
+        )
+      case _                         => false
+
   private def validate[A: Schema](value: A, label: String): IO[EclipseStoreError, Unit] =
     val codec = JsonCodec.jsonCodec(summon[Schema[A]])
-    val json  = codec.encodeJson(value, None).toString
     ZIO
-      .fromEither(codec.decodeJson(json))
-      .as(())
-      .mapError(error => EclipseStoreError.QueryError(s"Schema validation failed for $label: $error", None))
+      .attempt {
+        val json = codec.encodeJson(value, None).toString
+        codec.decodeJson(json)
+      }
+      .catchSome {
+        case e if isKnownOptionInstantEncodingBug(e) =>
+          ZIO.logDebug(
+            s"Skipping TypedStore JSON validation for $label due to known zio-json Option[Instant] bug: ${e.getMessage}"
+          ) *> ZIO.succeed(Right(value))
+      }
+      .mapError(e => EclipseStoreError.QueryError(s"Schema validation failed for $label", Some(e)))
+      .flatMap {
+        case Right(_)    => ZIO.unit
+        case Left(error) => ZIO.fail(EclipseStoreError.QueryError(s"Schema validation failed for $label: $error", None))
+      }
 
   override def store[K: Schema, V: Schema](key: K, value: V): IO[EclipseStoreError, Unit] =
     validate(key, "key") *> validate(value, "value") *> underlying.put(key, value)

@@ -12,6 +12,12 @@ import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 object TypedStoreSpec extends ZIOSpecDefault:
   final case class User(id: String, name: String, createdAt: Instant) derives Schema
   final case class UsersRoot(values: List[User]) derives Schema
+  final case class AgentIssueRow(
+    id: String,
+    assignedAgent: Option[String],
+    assignedAt: Option[Instant],
+    updatedAt: Instant,
+  ) derives Schema
 
   private val layer = EclipseStoreService.inMemory >>> TypedStore.live
 
@@ -46,5 +52,25 @@ object TypedStoreSpec extends ZIOSpecDefault:
           root <- TypedStore.typedRoot(descriptor)
           _    <- TypedStore.storePersist(user)
         yield assertTrue(root.values.isEmpty)
+      },
+      test("store works for case classes with Option[Instant] fields") {
+        val rowSome = AgentIssueRow(
+          id = "iss-1",
+          assignedAgent = Some("agent-1"),
+          assignedAt = Some(Instant.ofEpochMilli(1_700_000_000_123L)),
+          updatedAt = Instant.ofEpochMilli(1_700_000_000_999L),
+        )
+        val rowNone = AgentIssueRow(
+          id = "iss-2",
+          assignedAgent = None,
+          assignedAt = None,
+          updatedAt = Instant.ofEpochMilli(1_700_000_001_000L),
+        )
+        for
+          _     <- TypedStore.store("issue:1", rowSome)
+          _     <- TypedStore.store("issue:2", rowNone)
+          someV <- TypedStore.fetch[String, AgentIssueRow]("issue:1")
+          noneV <- TypedStore.fetch[String, AgentIssueRow]("issue:2")
+        yield assertTrue(someV.contains(rowSome), noneV.contains(rowNone))
       },
     ).provideLayer(layer)

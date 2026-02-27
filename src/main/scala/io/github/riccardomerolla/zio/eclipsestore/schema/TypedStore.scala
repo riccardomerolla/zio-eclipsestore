@@ -36,11 +36,7 @@ trait TypedStore:
 final case class TypedStoreLive(underlying: EclipseStoreService) extends TypedStore:
   private def isKnownOptionInstantEncodingBug(error: Throwable): Boolean =
     error match
-      case _: NoSuchElementException =>
-        Option(error.getMessage).contains("None.get") &&
-        error.getStackTrace.exists(ste =>
-          ste.getClassName.contains("zio.json.JsonEncoder") && ste.getMethodName == "isNothing"
-        )
+      case _: NoSuchElementException => Option(error.getMessage).contains("None.get")
       case _                         => false
 
   private def validate[A: Schema](value: A, label: String): IO[EclipseStoreError, Unit] =

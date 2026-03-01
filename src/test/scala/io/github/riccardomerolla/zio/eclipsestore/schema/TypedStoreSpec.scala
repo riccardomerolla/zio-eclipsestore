@@ -19,7 +19,11 @@ object TypedStoreSpec extends ZIOSpecDefault:
     updatedAt: Instant,
   ) derives Schema
 
-  private val layer = EclipseStoreService.inMemory >>> TypedStore.live
+  // Suppress deprecation: inMemory is used in tests where serialization is irrelevant.
+  // For production use, compose with TypedStore.handlersFor[K, V] instead.
+  @annotation.nowarn("cat=deprecation")
+  private val layer: ULayer[TypedStore] =
+    EclipseStoreService.inMemory >>> TypedStore.live
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("TypedStore")(

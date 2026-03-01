@@ -1,7 +1,6 @@
 package io.github.riccardomerolla.zio.eclipsestore.schema
 
 import java.nio.file.{ Files, Path }
-import java.time.Instant
 
 import scala.jdk.CollectionConverters.*
 

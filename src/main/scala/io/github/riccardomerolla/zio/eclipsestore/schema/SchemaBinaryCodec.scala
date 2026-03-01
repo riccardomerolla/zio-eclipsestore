@@ -94,14 +94,7 @@ object SchemaBinaryCodec:
                 // and the case will still be skipped — the same pre-existing behaviour.
                 scala.util.Try(
                   Class.forName(s"${outerClass.getName}$$${enumCase.id}").asInstanceOf[Class[A]]
-                ).recover { case e =>
-                  System.err.println(
-                    s"[SchemaBinaryCodec] Could not resolve handler class for enum case '${enumCase.id}' " +
-                      s"(tried '${outerClass.getName}$$${enumCase.id}'): ${e.getMessage}. " +
-                      "This case will use EclipseStore's default serializer and may not survive a store restart."
-                  )
-                  throw e
-                }.toOption
+                ).toOption
           caseClassOpt match
             case None            => acc
             case Some(caseClass) =>

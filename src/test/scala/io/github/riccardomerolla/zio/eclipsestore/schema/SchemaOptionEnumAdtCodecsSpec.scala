@@ -137,4 +137,102 @@ object SchemaOptionEnumAdtCodecsSpec extends ZIOSpecDefault:
           )
         )
       },
+      // Regression tests for issue #31: enum with case class variants (not just case objects).
+      // These tests verify that each case class variant pattern-matches correctly after restart,
+      // catching the category of bug documented in #25 before it reaches production.
+      suite("Enum case class variants — restart regression (#31)")(
+        test("Confirmed variant pattern-matches correctly after restart") {
+          val confirmedAt = Instant.ofEpochMilli(1_700_000_000_000L)
+          val payment     = Payment("pay-1", PaymentState.Confirmed(BigDecimal("99.99"), confirmedAt))
+          restartRoundtrip("payment:pay-1", payment, Schema[Payment]).map { out =>
+            assertTrue(
+              out.isDefined,
+              out.exists(p =>
+                p.state match
+                  case PaymentState.Confirmed(amount, _) => amount == BigDecimal("99.99")
+                  case _                                 => false
+              ),
+            )
+          }
+        },
+        test("Pending variant (single-field) pattern-matches correctly after restart") {
+          val createdAt = Instant.ofEpochMilli(1_700_000_001_000L)
+          val payment   = Payment("pay-2", PaymentState.Pending(createdAt))
+          restartRoundtrip("payment:pay-2", payment, Schema[Payment]).map { out =>
+            assertTrue(
+              out.isDefined,
+              out.exists(p =>
+                p.state match
+                  case PaymentState.Pending(ts) => ts == createdAt
+                  case _                        => false
+              ),
+            )
+          }
+        },
+        test("Failed variant (two-field) pattern-matches correctly after restart") {
+          val failedAt = Instant.ofEpochMilli(1_700_000_002_000L)
+          val payment  = Payment("pay-3", PaymentState.Failed("insufficient funds", failedAt))
+          restartRoundtrip("payment:pay-3", payment, Schema[Payment]).map { out =>
+            assertTrue(
+              out.isDefined,
+              out.exists(p =>
+                p.state match
+                  case PaymentState.Failed(reason, _) => reason == "insufficient funds"
+                  case _                              => false
+              ),
+            )
+          }
+        },
+        test("all PaymentState variants round-trip with correct equality after restart") {
+          val confirmedAt = Instant.ofEpochMilli(1_700_000_000_000L)
+          val createdAt   = Instant.ofEpochMilli(1_700_000_001_000L)
+          val failedAt    = Instant.ofEpochMilli(1_700_000_002_000L)
+          for
+            confirmed <- restartRoundtrip(
+                           "pay-all-confirmed",
+                           Payment("c", PaymentState.Confirmed(BigDecimal("1.00"), confirmedAt)),
+                           Schema[Payment],
+                         )
+            pending   <- restartRoundtrip(
+                           "pay-all-pending",
+                           Payment("p", PaymentState.Pending(createdAt)),
+                           Schema[Payment],
+                         )
+            failed    <- restartRoundtrip(
+                           "pay-all-failed",
+                           Payment("f", PaymentState.Failed("timeout", failedAt)),
+                           Schema[Payment],
+                         )
+          yield assertTrue(
+            confirmed.contains(Payment("c", PaymentState.Confirmed(BigDecimal("1.00"), confirmedAt))),
+            pending.contains(Payment("p", PaymentState.Pending(createdAt))),
+            failed.contains(Payment("f", PaymentState.Failed("timeout", failedAt))),
+          )
+        },
+        test("sealed trait hierarchy pattern-matches correctly after restart") {
+          import Shape.*
+          val schema = Schema[Shape]
+          for
+            circle <- restartRoundtrip("shape-circle", Circle(3.14), schema)
+            rect   <- restartRoundtrip("shape-rect", Rectangle(2.0, 5.0), schema)
+            origin <- restartRoundtrip("shape-origin", Origin(), schema)
+          yield assertTrue(
+            circle.exists(s =>
+              s match
+                case Circle(r) => r == 3.14
+                case _         => false
+            ),
+            rect.exists(s =>
+              s match
+                case Rectangle(w, h) => w == 2.0 && h == 5.0
+                case _               => false
+            ),
+            origin.exists(s =>
+              s match
+                case Origin() => true
+                case _        => false
+            ),
+          )
+        },
+      ),
     )

@@ -84,3 +84,11 @@ final case class AgentIssue(
   labels: Chunk[String],
   dueAt: Option[Instant],
 ) derives Schema
+
+// Fixtures for issue #31: enum with case class variants (1-field, 2-field, zero-arg).
+enum PaymentState derives Schema:
+  case Pending(createdAt: Instant)
+  case Confirmed(amount: BigDecimal, confirmedAt: Instant)
+  case Failed(reason: String, failedAt: Instant)
+
+final case class Payment(id: String, state: PaymentState) derives Schema

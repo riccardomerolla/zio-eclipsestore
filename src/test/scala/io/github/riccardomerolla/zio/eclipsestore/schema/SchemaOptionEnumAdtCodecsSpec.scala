@@ -148,7 +148,10 @@ object SchemaOptionEnumAdtCodecsSpec extends ZIOSpecDefault:
           // AssignmentState.Assigned uses ValidatedId whose Schema.transformOrFail rejects the
           // empty-string default, so enumCaseSubtypeHandlers alone (without nested traversal)
           // would fail to register a handler for AssignmentState$Assigned.
-          val value = IssueRecord("rec-1", AssignmentState.Assigned(ValidatedId("agent-007"), java.time.Instant.ofEpochMilli(1_700_000_000_000L)))
+          val value = IssueRecord(
+            "rec-1",
+            AssignmentState.Assigned(ValidatedId("agent-007"), java.time.Instant.ofEpochMilli(1_700_000_000_000L)),
+          )
           restartRoundtrip("issue-record:1", value, Schema[IssueRecord]).map { out =>
             assertTrue(
               out.isDefined,

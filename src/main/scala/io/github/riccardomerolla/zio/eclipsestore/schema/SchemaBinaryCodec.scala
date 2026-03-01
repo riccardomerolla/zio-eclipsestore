@@ -113,8 +113,8 @@ object SchemaBinaryCodec:
   /** Recursively walks a schema's fields and collects handlers for any nested enum (or sealed-trait) types.
     *
     * When `handlers()` is called on a record type (e.g. `AgentIssue`), EclipseStore stores the whole value via the
-    * `SchemaBackedBinaryTypeHandler` JSON handler. However, EclipseStore also registers the concrete runtime classes
-    * it encounters during serialisation in its type dictionary. If a nested enum type (e.g. `IssueState`) has no
+    * `SchemaBackedBinaryTypeHandler` JSON handler. However, EclipseStore also registers the concrete runtime classes it
+    * encounters during serialisation in its type dictionary. If a nested enum type (e.g. `IssueState`) has no
     * registered handler, EclipseStore falls back to its native reflective serialiser for that class — which creates
     * fresh JVM instances on restart that fail Scala pattern matching.
     *
@@ -137,10 +137,11 @@ object SchemaBinaryCodec:
     else
       val visited1 = visited + schemaId
       schema match
-        case rec: Schema.Record[A @unchecked] =>
-          rec.fields.foldLeft((Chunk.empty[BinaryTypeHandler[?]], visited1)) { case ((acc, vis), field) =>
-            val (fieldHandlers, vis2) = collectNestedEnumHandlers(field.schema.asInstanceOf[Schema[Any]], vis)
-            (acc ++ fieldHandlers, vis2)
+        case rec: Schema.Record[A @unchecked]      =>
+          rec.fields.foldLeft((Chunk.empty[BinaryTypeHandler[?]], visited1)) {
+            case ((acc, vis), field) =>
+              val (fieldHandlers, vis2) = collectNestedEnumHandlers(field.schema.asInstanceOf[Schema[Any]], vis)
+              (acc ++ fieldHandlers, vis2)
           }
         case enumSchema: Schema.Enum[A @unchecked] =>
           // Derive the outer enum class from the first resolvable case instance.
@@ -159,31 +160,31 @@ object SchemaBinaryCodec:
               )
               .getOrElse(classOf[AnyRef])
               .asInstanceOf[Class[A]]
-          val caseHandlers = enumCaseSubtypeHandlers(enumSchema, outerClass)
+          val caseHandlers         = enumCaseSubtypeHandlers(enumSchema, outerClass)
           // Also recurse into each case's own schema fields (for nested records within enum cases)
-          val deepHandlers = enumSchema.cases.foldLeft((Chunk.empty[BinaryTypeHandler[?]], visited1)) {
+          val deepHandlers         = enumSchema.cases.foldLeft((Chunk.empty[BinaryTypeHandler[?]], visited1)) {
             case ((acc, vis), enumCase) =>
               val (ch, vis2) = collectNestedEnumHandlers(enumCase.schema.asInstanceOf[Schema[Any]], vis)
               (acc ++ ch, vis2)
           }
           (caseHandlers ++ deepHandlers._1, deepHandlers._2)
-        case opt: Schema.Optional[?] =>
+        case opt: Schema.Optional[?]               =>
           collectNestedEnumHandlers(opt.schema.asInstanceOf[Schema[Any]], visited1)
-        case seq: Schema.Sequence[?, ?, ?] =>
+        case seq: Schema.Sequence[?, ?, ?]         =>
           collectNestedEnumHandlers(seq.elementSchema.asInstanceOf[Schema[Any]], visited1)
-        case map: Schema.Map[?, ?] =>
+        case map: Schema.Map[?, ?]                 =>
           val (kh, vis2) = collectNestedEnumHandlers(map.keySchema.asInstanceOf[Schema[Any]], visited1)
           val (vh, vis3) = collectNestedEnumHandlers(map.valueSchema.asInstanceOf[Schema[Any]], vis2)
           (kh ++ vh, vis3)
-        case set: Schema.Set[?] =>
+        case set: Schema.Set[?]                    =>
           collectNestedEnumHandlers(set.elementSchema.asInstanceOf[Schema[Any]], visited1)
-        case lzy: Schema.Lazy[?] =>
+        case lzy: Schema.Lazy[?]                   =>
           collectNestedEnumHandlers(lzy.schema.asInstanceOf[Schema[Any]], visited1)
-        case _: Schema.Transform[?, ?, ?] =>
+        case _: Schema.Transform[?, ?, ?]          =>
           // Transform wraps an inner schema — not directly traversable without type erasure issues;
           // the outer JSON handler covers the value correctly.
           (Chunk.empty, visited1)
-        case _ =>
+        case _                                     =>
           (Chunk.empty, visited1)
 
   private def boxedClass(cls: Class[?]): Class[?] =

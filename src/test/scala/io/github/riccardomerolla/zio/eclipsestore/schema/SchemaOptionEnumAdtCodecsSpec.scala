@@ -99,6 +99,22 @@ object SchemaOptionEnumAdtCodecsSpec extends ZIOSpecDefault:
           c <- restartRoundtrip("shape-c", Origin(), schema)
         yield assertTrue(a.contains(Circle(2.5)), b.contains(Rectangle(4.0, 5.0)), c.contains(Origin()))
       },
+      test("enum case with transformOrFail field (no defaultValue) survives restart") {
+        // Regression test for issue #25: enumCaseSubtypeHandlers skipped cases whose Schema had no
+        // defaultValue (e.g. opaque types with transformOrFail validation). The Assigned case here
+        // uses ValidatedId, whose Schema.transformOrFail rejects the empty-string default, causing
+        // defaultValue to be Left. The fix falls back to Class.forName to find the case class.
+        val value = AssignmentState.Assigned(ValidatedId("agent-007"), Instant.ofEpochMilli(1_700_000_000_000L))
+        restartRoundtrip("assignment-assigned", value, Schema[AssignmentState]).map(out =>
+          assertTrue(out.contains(value))
+        )
+      },
+      test("enum case without transformOrFail field alongside transformOrFail case survives restart") {
+        val value = AssignmentState.Unassigned()
+        restartRoundtrip("assignment-unassigned", value, Schema[AssignmentState]).map(out =>
+          assertTrue(out.contains(value))
+        )
+      },
       test("ConversationEntry model with options + enums survives restart") {
         val entry = ConversationEntry(
           id = Some("entry-1"),

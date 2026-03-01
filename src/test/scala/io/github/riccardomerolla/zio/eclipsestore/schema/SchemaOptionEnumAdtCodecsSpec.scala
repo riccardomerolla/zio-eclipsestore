@@ -7,7 +7,7 @@ import scala.jdk.CollectionConverters.*
 import scala.reflect.ClassTag
 
 import zio.*
-import zio.schema.Schema
+import zio.schema.{ Schema, derived }
 import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
@@ -15,6 +15,8 @@ import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
 object SchemaOptionEnumAdtCodecsSpec extends ZIOSpecDefault:
+  // Used by nested-enum regression tests below.
+  final case class IssueRecord(id: String, assignment: AssignmentState) derives Schema
   private def withService[A](
     dir: Path,
     handlers: Chunk[org.eclipse.serializer.persistence.binary.types.BinaryTypeHandler[?]],
@@ -137,6 +139,48 @@ object SchemaOptionEnumAdtCodecsSpec extends ZIOSpecDefault:
           )
         )
       },
+      // Regression tests for nested ADT: a record type containing a nested Scala 3 enum.
+      // This exercises `nestedEnumHandlers` — without it, EclipseStore's native reflective
+      // serialiser would handle AssignmentState, creating fresh JVM instances that fail
+      // pattern matching after restart.
+      suite("Nested enum in record type — restart regression")(
+        test("record with nested AssignmentState.Assigned (transformOrFail case) survives restart") {
+          // AssignmentState.Assigned uses ValidatedId whose Schema.transformOrFail rejects the
+          // empty-string default, so enumCaseSubtypeHandlers alone (without nested traversal)
+          // would fail to register a handler for AssignmentState$Assigned.
+          val value = IssueRecord("rec-1", AssignmentState.Assigned(ValidatedId("agent-007"), java.time.Instant.ofEpochMilli(1_700_000_000_000L)))
+          restartRoundtrip("issue-record:1", value, Schema[IssueRecord]).map { out =>
+            assertTrue(
+              out.isDefined,
+              out.exists(r =>
+                r.assignment match
+                  case AssignmentState.Assigned(id, _) => id == ValidatedId("agent-007")
+                  case _                               => false
+              ),
+            )
+          }
+        },
+        test("record with nested AssignmentState.Unassigned survives restart") {
+          val value = IssueRecord("rec-2", AssignmentState.Unassigned())
+          restartRoundtrip("issue-record:2", value, Schema[IssueRecord]).map { out =>
+            assertTrue(
+              out.isDefined,
+              out.exists(r =>
+                r.assignment match
+                  case AssignmentState.Unassigned() => true
+                  case _                            => false
+              ),
+            )
+          }
+        },
+        test("SchemaBinaryCodec.handlers on record type includes nested enum case handlers") {
+          // Verifies that handlers(Schema[AgentIssue]) produces handlers for nested IssueState
+          // subtypes — which is the pattern used in DataStoreModule.dataStoreHandlers.
+          val agentIssueHandlers = SchemaBinaryCodec.handlers(Schema[AgentIssue])
+          // Should include handlers for AgentIssue itself AND its nested IssueState cases
+          assertTrue(agentIssueHandlers.size > 1)
+        },
+      ),
       // Regression tests for issue #31: enum with case class variants (not just case objects).
       // These tests verify that each case class variant pattern-matches correctly after restart,
       // catching the category of bug documented in #25 before it reaches production.

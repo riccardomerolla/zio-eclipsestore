@@ -39,7 +39,7 @@ object SchemaBinaryCodec:
   /** Derives all handlers needed for a schema and runtime class, including enum case subtype handlers. */
   def handlers[A](schema: Schema[A], runtimeClass: Class[A]): Chunk[BinaryTypeHandler[?]] =
     val primary = handler(schema, runtimeClass)
-    val extras  = enumCaseSubtypeHandlers(schema)
+    val extras  = enumCaseSubtypeHandlers(schema, runtimeClass)
     Chunk.single(primary) ++ extras.filterNot(_.`type`() == primary.`type`())
 
   /** Derives a `BinaryTypeHandler[A]` from `Schema[A]` using an explicit type id. */
@@ -56,8 +56,9 @@ object SchemaBinaryCodec:
 
   /** Derives all handlers needed for a schema. For enums, this includes case runtime subtype handlers. */
   def handlers[A: ClassTag](schema: Schema[A]): Chunk[BinaryTypeHandler[?]] =
-    val primary = handler(schema)
-    val extras  = enumCaseSubtypeHandlers(schema)
+    val primary      = handler(schema)
+    val runtimeClass = boxedClass(summon[ClassTag[A]].runtimeClass).asInstanceOf[Class[A]]
+    val extras       = enumCaseSubtypeHandlers(schema, runtimeClass)
     Chunk.single(primary) ++ extras.filterNot(_.`type`() == primary.`type`())
 
   private def stableTypeId[A](schema: Schema[A]): Long =
@@ -74,15 +75,36 @@ object SchemaBinaryCodec:
     : BinaryTypeHandler[A] =
     new SchemaBackedBinaryTypeHandler[A](runtimeClass, schema).initialize(typeId).asInstanceOf[BinaryTypeHandler[A]]
 
-  private def enumCaseSubtypeHandlers[A](schema: Schema[A]): Chunk[BinaryTypeHandler[?]] =
+  private def enumCaseSubtypeHandlers[A](schema: Schema[A], outerClass: Class[A]): Chunk[BinaryTypeHandler[?]] =
     schema match
       case enumSchema: Schema.Enum[A @unchecked] =>
         enumSchema.cases.foldLeft(Chunk.empty[BinaryTypeHandler[?]]) { (acc, enumCase) =>
-          enumCase.schema.defaultValue.toOption match
-            case None              => acc
-            case Some(defaultCase) =>
-              val instance  = enumCase.construct(defaultCase).asInstanceOf[AnyRef]
-              val caseClass = instance.getClass.asInstanceOf[Class[A]]
+          val caseClassOpt: Option[Class[A]] =
+            enumCase.schema.defaultValue.toOption match
+              case Some(defaultCase) =>
+                val instance = enumCase.construct(defaultCase).asInstanceOf[AnyRef]
+                Some(instance.getClass.asInstanceOf[Class[A]])
+              case None =>
+                // Fallback for cases with no defaultValue (e.g. fields using transformOrFail schemas
+                // that reject the ZIO Schema-generated empty-string / zero default).
+                // Scala 3 enums encode sub-cases as OuterClass$CaseName on the JVM;
+                // enumCase.id is the unqualified case name (e.g. "Assigned").
+                // This heuristic works for Scala 3 enum cases nested inside the outer enum class.
+                // For sealed-trait subtypes defined at the top level the lookup will fail (ClassNotFoundException)
+                // and the case will still be skipped — the same pre-existing behaviour.
+                scala.util.Try(
+                  Class.forName(s"${outerClass.getName}$$${enumCase.id}").asInstanceOf[Class[A]]
+                ).recover { case e =>
+                  System.err.println(
+                    s"[SchemaBinaryCodec] Could not resolve handler class for enum case '${enumCase.id}' " +
+                      s"(tried '${outerClass.getName}$$${enumCase.id}'): ${e.getMessage}. " +
+                      "This case will use EclipseStore's default serializer and may not survive a store restart."
+                  )
+                  throw e
+                }.toOption
+          caseClassOpt match
+            case None            => acc
+            case Some(caseClass) =>
               if caseClass.getName.contains("$$anon$") then acc
               else
                 val caseTypeId = stableTypeIdForClass(schema, caseClass.getName)

@@ -5,6 +5,20 @@ import java.time.Instant
 import zio.Chunk
 import zio.schema.{ Schema, derived }
 
+// Opaque type with a validating Schema (transformOrFail rejects the default empty string),
+// reproducing the bug from issue #25: enumCaseSubtypeHandlers skips cases whose defaultValue is Left.
+opaque type ValidatedId = String
+object ValidatedId:
+  def apply(s: String): ValidatedId = s
+  given schema: Schema[ValidatedId] = Schema.primitive[String].transformOrFail(
+    s => if s.nonEmpty then Right(s) else Left("ValidatedId cannot be empty"),
+    Right(_),
+  )
+
+enum AssignmentState derives Schema:
+  case Unassigned()
+  case Assigned(agentId: ValidatedId, assignedAt: Instant)
+
 enum MessageType derives Schema:
   case Text()
   case Code()

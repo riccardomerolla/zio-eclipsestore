@@ -84,7 +84,7 @@ object SchemaBinaryCodec:
               case Some(defaultCase) =>
                 val instance = enumCase.construct(defaultCase).asInstanceOf[AnyRef]
                 Some(instance.getClass.asInstanceOf[Class[A]])
-              case None =>
+              case None              =>
                 // Fallback for cases with no defaultValue (e.g. fields using transformOrFail schemas
                 // that reject the ZIO Schema-generated empty-string / zero default).
                 // Scala 3 enums encode sub-cases as OuterClass$CaseName on the JVM;

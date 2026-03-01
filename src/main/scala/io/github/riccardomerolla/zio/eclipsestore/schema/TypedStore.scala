@@ -84,27 +84,25 @@ object TypedStore:
 
   import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
 
-  /**
-   * Layer constructor for `TypedStore`.
-   *
-   * @deprecated
-   *   Prefer composing with [[handlersFor]] to ensure all stored types have a registered
-   *   `BinaryTypeHandler` before the EclipseStore storage manager starts. Without handler
-   *   registration, values containing Scala 3 enums or sealed traits may be serialised correctly on
-   *   the first run but fail to deserialise correctly after a JVM restart.
-   *
-   *   Migration:
-   *   {{{
-   *   // Before
-   *   EclipseStoreService.live >>> TypedStore.live
-   *
-   *   // After
-   *   ZLayer.succeed(config) >>>
-   *     TypedStore.handlersFor[String, MyValue] >>>
-   *     EclipseStoreService.live >>>
-   *     TypedStore.live
-   *   }}}
-   */
+  /** Layer constructor for `TypedStore`.
+    *
+    * @deprecated
+    *   Prefer composing with [[handlersFor]] to ensure all stored types have a registered `BinaryTypeHandler` before
+    *   the EclipseStore storage manager starts. Without handler registration, values containing Scala 3 enums or sealed
+    *   traits may be serialised correctly on the first run but fail to deserialise correctly after a JVM restart.
+    *
+    * Migration:
+    * {{{
+    *   // Before
+    *   EclipseStoreService.live >>> TypedStore.live
+    *
+    *   // After
+    *   ZLayer.succeed(config) >>>
+    *     TypedStore.handlersFor[String, MyValue] >>>
+    *     EclipseStoreService.live >>>
+    *     TypedStore.live
+    * }}}
+    */
   @deprecated(
     "Use TypedStore.handlersFor[K, V] >>> EclipseStoreService.live >>> TypedStore.live to ensure correct binary handler registration before store startup.",
     since = "0.x",
@@ -112,34 +110,33 @@ object TypedStore:
   val live: ZLayer[EclipseStoreService, Nothing, TypedStore] =
     ZLayer.fromFunction(TypedStoreLive.apply)
 
-  /**
-   * Config-enriching layer that derives and pre-registers `BinaryTypeHandler`s for key type `K`
-   * and value type `V` before `EclipseStoreService.live` starts.
-   *
-   * Chain this layer between your `EclipseStoreConfig` provider and `EclipseStoreService.live`:
-   *
-   * {{{
-   * val layer =
-   *   ZLayer.succeed(EclipseStoreConfig.make(storagePath)) >>>
-   *   TypedStore.handlersFor[String, AgentIssue] >>>
-   *   EclipseStoreService.live >>>
-   *   TypedStore.live
-   * }}}
-   *
-   * For multiple value types, chain `handlersFor` calls:
-   *
-   * {{{
-   * val layer =
-   *   ZLayer.succeed(config) >>>
-   *   TypedStore.handlersFor[String, AgentIssue] >>>
-   *   TypedStore.handlersFor[String, ChatConversation] >>>
-   *   EclipseStoreService.live >>>
-   *   TypedStore.live
-   * }}}
-   *
-   * EclipseStore deduplicates handlers by runtime class at startup, so overlapping handlers from
-   * multiple `handlersFor` calls are harmless.
-   */
+  /** Config-enriching layer that derives and pre-registers `BinaryTypeHandler`s for key type `K` and value type `V`
+    * before `EclipseStoreService.live` starts.
+    *
+    * Chain this layer between your `EclipseStoreConfig` provider and `EclipseStoreService.live`:
+    *
+    * {{{
+    * val layer =
+    *   ZLayer.succeed(EclipseStoreConfig.make(storagePath)) >>>
+    *   TypedStore.handlersFor[String, AgentIssue] >>>
+    *   EclipseStoreService.live >>>
+    *   TypedStore.live
+    * }}}
+    *
+    * For multiple value types, chain `handlersFor` calls:
+    *
+    * {{{
+    * val layer =
+    *   ZLayer.succeed(config) >>>
+    *   TypedStore.handlersFor[String, AgentIssue] >>>
+    *   TypedStore.handlersFor[String, ChatConversation] >>>
+    *   EclipseStoreService.live >>>
+    *   TypedStore.live
+    * }}}
+    *
+    * EclipseStore deduplicates handlers by runtime class at startup, so overlapping handlers from multiple
+    * `handlersFor` calls are harmless.
+    */
   def handlersFor[K: Schema: ClassTag, V: Schema: ClassTag]
     : ZLayer[EclipseStoreConfig, Nothing, EclipseStoreConfig] =
     ZLayer.fromFunction { (config: EclipseStoreConfig) =>

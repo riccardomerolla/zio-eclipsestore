@@ -8,7 +8,7 @@ lazy val zioSchemaVersion = "1.8.0"
 lazy val zioJsonVersion = "0.9.0"
 lazy val zioHttpVersion = "3.8.1"
 lazy val zioConfigVersion = "4.0.6"
-lazy val eclipseStoreVersion = "4.0.0"
+lazy val eclipseStoreVersion = "4.0.1"
 
 addCommandAlias("fmt", " ; scalafixAll ; scalafmtAll")
 addCommandAlias("check", "; scalafixAll --check; scalafmtCheckAll")

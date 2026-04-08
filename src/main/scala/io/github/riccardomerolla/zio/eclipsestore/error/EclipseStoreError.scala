@@ -1,6 +1,6 @@
 package io.github.riccardomerolla.zio.eclipsestore.error
 
-enum EclipseStoreError:
+enum EclipseStoreError extends PersistenceError:
   case StorageError(message: String, cause: Option[Throwable] = None)
   case QueryError(message: String, cause: Option[Throwable] = None)
   case InitializationError(message: String, cause: Option[Throwable] = None)

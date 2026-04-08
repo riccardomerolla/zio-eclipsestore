@@ -1,6 +1,8 @@
 package io.github.riccardomerolla.zio.eclipsestore.gigamap.error
 
-sealed trait GigaMapError extends Throwable
+import io.github.riccardomerolla.zio.eclipsestore.error.PersistenceError
+
+sealed trait GigaMapError extends Throwable with PersistenceError
 
 object GigaMapError:
   final case class StorageFailure(message: String, cause: Option[Throwable] = None) extends GigaMapError:

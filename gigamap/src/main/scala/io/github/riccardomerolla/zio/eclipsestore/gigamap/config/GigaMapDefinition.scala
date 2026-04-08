@@ -2,11 +2,14 @@ package io.github.riccardomerolla.zio.eclipsestore.gigamap.config
 
 import zio.Chunk
 
+import io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.SimilarityFunction
+
 /** Describes a named GigaMap instance together with optional indexes. */
 final case class GigaMapDefinition[K, V](
   name: String,
   indexes: Chunk[GigaMapIndex[V, ?]] = Chunk.empty[GigaMapIndex[V, Any]],
   vectorIndexes: Chunk[GigaMapVectorIndex[V]] = Chunk.empty[GigaMapVectorIndex[V]],
+  spatialIndexes: Chunk[GigaMapSpatialIndex[V]] = Chunk.empty[GigaMapSpatialIndex[V]],
   autoPersist: Boolean = true,
 ):
   private[gigamap] val anyIndexes: Chunk[GigaMapIndex[V, Any]] =
@@ -25,4 +28,12 @@ final case class GigaMapVectorIndex[V](
   name: String,
   extract: V => Array[Float],
   dimension: Int,
+  similarityFunction: SimilarityFunction = SimilarityFunction.Cosine,
+)
+
+final case class GeoPoint(latitude: Double, longitude: Double)
+
+final case class GigaMapSpatialIndex[V](
+  name: String,
+  extract: V => GeoPoint,
 )

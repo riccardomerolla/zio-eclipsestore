@@ -4,6 +4,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentHashMap.KeySetView
 
 import scala.jdk.CollectionConverters.*
+import scala.math.{ atan2, cos, sin, sqrt }
 
 import zio.*
 
@@ -64,8 +65,13 @@ final private class GigaMapLive[K, V: Tag](
 
   private val vectorIndexes = definition.vectorIndexes
 
+  private val spatialIndexes = definition.spatialIndexes
+
   // Store vector embeddings for similarity search
   private val vectorStore: ConcurrentHashMap[String, ConcurrentHashMap[Any, Array[Float]]] =
+    new ConcurrentHashMap()
+
+  private val spatialStore: ConcurrentHashMap[String, ConcurrentHashMap[Any, GeoPoint]] =
     new ConcurrentHashMap()
 
   override def put(key: K, value: V): IO[GigaMapError, Unit] =
@@ -76,6 +82,7 @@ final private class GigaMapLive[K, V: Tag](
                     }
         _        <- updateIndexes(key, previous, Some(value))
         _        <- updateVectorIndexes(key, previous, Some(value))
+        _        <- updateSpatialIndexes(key, previous, Some(value))
         _        <- persistIfNeeded
       yield ()
     }
@@ -92,6 +99,7 @@ final private class GigaMapLive[K, V: Tag](
         removed <- attempt(Option(map.remove(key)).map(_.asInstanceOf[V]))
         _       <- updateIndexes(key, removed, None)
         _       <- updateVectorIndexes(key, removed, None)
+        _       <- updateSpatialIndexes(key, removed, None)
         _       <- persistIfNeeded
       yield removed
     }
@@ -102,6 +110,7 @@ final private class GigaMapLive[K, V: Tag](
         map.clear()
         indexState.values().asScala.foreach(_.clear())
         vectorStore.values().asScala.foreach(_.clear())
+        spatialStore.values().asScala.foreach(_.clear())
       } *> persistIfNeeded
     }
 
@@ -136,25 +145,42 @@ final private class GigaMapLive[K, V: Tag](
       case GigaMapQuery.ByIndex(indexName, value)  =>
         for result <- byIndex(indexName, value)
         yield result.asInstanceOf[A]
+      case GigaMapQuery.VectorSearch(indexName, vector, limit, minScore) =>
+        vectorSearch(indexName, vector, limit, minScore).asInstanceOf[IO[GigaMapError, A]]
       case query: GigaMapQuery.VectorSimilarity[V] =>
-        for result <- vectorSimilaritySearch(query.indexName, query.vector, query.limit, query.threshold)
-        yield result.asInstanceOf[A]
+        vectorSearch(query.indexName, Chunk.fromArray(query.vector), query.limit, query.threshold)
+          .map(_.map(_.value))
+          .asInstanceOf[IO[GigaMapError, A]]
+      case GigaMapQuery.SpatialRadius(indexName, center, radiusKilometers) =>
+        spatialRadius(indexName, center, radiusKilometers).asInstanceOf[IO[GigaMapError, A]]
+      case GigaMapQuery.Composite(predicates) =>
+        composite(predicates).asInstanceOf[IO[GigaMapError, A]]
       case GigaMapQuery.Count()                    =>
         size.map(_.toLong).asInstanceOf[IO[GigaMapError, A]]
 
   override def persist: IO[GigaMapError, Unit] =
     persistState
 
-  private def byIndex(indexName: String, value: Any): IO[GigaMapError, Chunk[V]] =
+  private def byIndexKeys(indexName: String, value: Any): IO[GigaMapError, Chunk[Any]] =
     for
       state   <- ZIO.fromOption(Option(indexState.get(indexName))).orElseFail(IndexNotDefined(indexName))
       keysOpt  = Option(state.get(value))
-      entries <- attempt {
-                   val data = keysOpt
-                     .map(_.asScala.toList.flatMap(key => Option(map.get(key)).map(_.asInstanceOf[V])))
-                     .getOrElse(Nil)
-                   Chunk.fromIterable(data)
-                 }
+      entries <- attempt(Chunk.fromIterable(keysOpt.map(_.asScala.toList).getOrElse(Nil)))
+    yield entries
+
+  private def filterKeys(predicate: V => Boolean): IO[GigaMapError, Chunk[Any]] =
+    attempt {
+      Chunk.fromIterable(
+        map.entrySet().asScala.collect {
+          case entry if predicate(entry.getValue.asInstanceOf[V]) => entry.getKey
+        }
+      )
+    }
+
+  private def byIndex(indexName: String, value: Any): IO[GigaMapError, Chunk[V]] =
+    for
+      keys    <- byIndexKeys(indexName, value)
+      entries <- attempt(keys.flatMap(key => Option(map.get(key)).map(_.asInstanceOf[V])))
     yield entries
 
   private def updateVectorIndexes(key: K, oldValue: Option[V], newValue: Option[V]): IO[GigaMapError, Unit] =
@@ -173,47 +199,104 @@ final private class GigaMapLive[K, V: Tag](
       }
     }
 
-  private def vectorSimilaritySearch(
+  private def vectorSearchKeys(
     indexName: String,
-    queryVector: Array[Float],
+    queryVector: Chunk[Float],
     limit: Int,
-    threshold: Option[Float],
-  ): IO[GigaMapError, Chunk[V]] =
+    minScore: Option[Float],
+  ): IO[GigaMapError, Chunk[(Any, Float)]] =
     for
       vectorIndexOpt <- attempt(vectorIndexes.find(_.name == indexName))
       vectorIndex    <- ZIO.fromOption(vectorIndexOpt).orElseFail(IndexNotDefined(indexName))
+      query           = queryVector.toArray
+      _              <-
+        if query.length == vectorIndex.dimension then ZIO.unit
+        else ZIO.fail(InvalidVectorQuery(indexName, vectorIndex.dimension, query.length))
       store          <- attempt(vectorStore.computeIfAbsent(indexName, _ => new ConcurrentHashMap[Any, Array[Float]]()))
       results        <- attempt {
-                          val scores = store.entrySet().asScala
-                            .map { entry =>
-                              val key      = entry.getKey
-                              val vector   = entry.getValue
-                              val distance = cosineSimilarity(queryVector, vector)
-                              (key, distance)
-                            }
-                            .filter {
-                              case (_, distance) =>
-                                threshold.forall(t => distance >= t)
-                            }
-                            .toList
-                            .sortBy { case (_, distance) => -distance } // Sort by distance descending
-                            .take(limit)
-                            .map {
-                              case (key, _) =>
-                                Option(map.get(key)).map(_.asInstanceOf[V])
-                            }
-                            .flatten
-                          Chunk.fromIterable(scores)
+                          Chunk.fromIterable(
+                            store.entrySet().asScala
+                              .map { entry =>
+                                val key    = entry.getKey
+                                val vector = entry.getValue
+                                val score  = similarity(vectorIndex.similarityFunction, query, vector)
+                                (key, score)
+                              }
+                              .filter { case (_, score) => minScore.forall(score >= _) }
+                              .toList
+                              .sortBy { case (_, score) => -score }
+                              .take(limit)
+                          )
                         }
     yield results
 
-  private def cosineSimilarity(vecA: Array[Float], vecB: Array[Float]): Float =
-    if vecA.length != vecB.length then 0f
+  private def vectorSearch(
+    indexName: String,
+    queryVector: Chunk[Float],
+    limit: Int,
+    minScore: Option[Float],
+  ): IO[GigaMapError, Chunk[GigaMapScored[V]]] =
+    for
+      ranked <- vectorSearchKeys(indexName, queryVector, limit, minScore)
+      values <- attempt {
+                  ranked.flatMap { case (key, score) =>
+                    Option(map.get(key)).map(value => GigaMapScored(value.asInstanceOf[V], score))
+                  }
+                }
+    yield values
+
+  private def spatialRadiusKeys(indexName: String, center: GeoPoint, radiusKilometers: Double): IO[GigaMapError, Chunk[Any]] =
+    if radiusKilometers < 0 then ZIO.fail(InvalidSpatialQuery(indexName, radiusKilometers))
     else
-      val dotProduct = (vecA zip vecB).foldLeft(0f) { case (sum, (a, b)) => sum + (a * b) }
-      val magnitudeA = Math.sqrt(vecA.foldLeft(0f) { case (sum, a) => sum + (a * a) })
-      val magnitudeB = Math.sqrt(vecB.foldLeft(0f) { case (sum, b) => sum + (b * b) })
-      if magnitudeA == 0 || magnitudeB == 0 then 0f else (dotProduct / (magnitudeA * magnitudeB)).toFloat
+      for
+        store <- ZIO.fromOption(Option(spatialStore.get(indexName))).orElseFail(IndexNotDefined(indexName))
+        keys  <- attempt {
+                  Chunk.fromIterable(
+                    store.entrySet().asScala.collect {
+                      case entry if haversineKilometers(center, entry.getValue) <= radiusKilometers => entry.getKey
+                    }
+                  )
+                }
+      yield keys
+
+  private def spatialRadius(indexName: String, center: GeoPoint, radiusKilometers: Double): IO[GigaMapError, Chunk[V]] =
+    for
+      keys   <- spatialRadiusKeys(indexName, center, radiusKilometers)
+      values <- attempt(keys.flatMap(key => Option(map.get(key)).map(_.asInstanceOf[V])))
+    yield values
+
+  private def composite(predicates: Chunk[GigaMapPredicate[V]]): IO[GigaMapError, Chunk[V]] =
+    if predicates.isEmpty then query(GigaMapQuery.All[V]())
+    else
+      for
+        matched      <- ZIO.foreach(predicates)(predicateKeys)
+        intersection  = matched.map(_.toSet).reduce(_ intersect _)
+        values       <- attempt {
+                          Chunk.fromIterable(
+                            map.entrySet().asScala.collect {
+                              case entry if intersection.contains(entry.getKey) => entry.getValue.asInstanceOf[V]
+                            }
+                          )
+                        }
+      yield values
+
+  private def predicateKeys(predicate: GigaMapPredicate[V]): IO[GigaMapError, Chunk[Any]] =
+    predicate match
+      case GigaMapPredicate.Filter(pred)                             => filterKeys(pred)
+      case GigaMapPredicate.ByIndex(index, value)                    => byIndexKeys(index, value)
+      case GigaMapPredicate.VectorSearch(index, vector, limit, min) => vectorSearchKeys(index, vector, limit, min).map(_.map(_._1))
+      case GigaMapPredicate.SpatialRadius(index, center, radius)     => spatialRadiusKeys(index, center, radius)
+
+  private def updateSpatialIndexes(key: K, oldValue: Option[V], newValue: Option[V]): IO[GigaMapError, Unit] =
+    attempt {
+      spatialIndexes.foreach { spatialIndex =>
+        val name  = spatialIndex.name
+        val store =
+          spatialStore.computeIfAbsent(name, _ => new ConcurrentHashMap[Any, GeoPoint]())
+        oldValue.foreach(_ => store.remove(key))
+        newValue.foreach(value => store.put(key, spatialIndex.extract(value)))
+      }
+    }
 
   private def updateIndexes(key: K, oldValue: Option[V], newValue: Option[V]): IO[GigaMapError, Unit] =
     attempt {
@@ -254,13 +337,48 @@ final private class GigaMapLive[K, V: Tag](
         .toList
     val indexBuckets              =
       indexMaps.flatMap(_.values().asScala.toList)
+    val vectorMaps                =
+      vectorStore.values().asScala.toList
+    val spatialMaps               =
+      spatialStore.values().asScala.toList
     val baseTargets: List[AnyRef] =
-      List(registry, registryMaps, registryIndexes, map, indexState)
+      List(registry, registryMaps, registryIndexes, map, indexState, vectorStore, spatialStore)
     val targets: List[AnyRef]     =
-      baseTargets ++ indexMaps ++ indexBuckets
+      baseTargets ++ indexMaps ++ indexBuckets ++ vectorMaps ++ spatialMaps
     store
       .persistAll[AnyRef](targets)
       .mapError(e => StorageFailure("Failed to persist GigaMap state", Some(new RuntimeException(e.toString))))
+
+  private def similarity(
+    function: io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.SimilarityFunction,
+    a: Array[Float],
+    b: Array[Float],
+  ): Float =
+    function match
+      case io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.SimilarityFunction.Cosine =>
+        val dot  = a.indices.foldLeft(0f)((acc, index) => acc + a(index) * b(index))
+        val magA = sqrt(a.foldLeft(0f)((acc, value) => acc + value * value).toDouble).toFloat
+        val magB = sqrt(b.foldLeft(0f)((acc, value) => acc + value * value).toDouble).toFloat
+        if magA == 0f || magB == 0f then 0f else dot / (magA * magB)
+      case io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.SimilarityFunction.DotProduct =>
+        a.indices.foldLeft(0f)((acc, index) => acc + a(index) * b(index))
+      case io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.SimilarityFunction.Euclidean =>
+        -a.indices.foldLeft(0f) { (acc, index) =>
+          val delta = a(index) - b(index)
+          acc + (delta * delta)
+        }
+
+  private def haversineKilometers(a: GeoPoint, b: GeoPoint): Double =
+    val earthRadiusKm = 6371.0
+    val dLat          = Math.toRadians(b.latitude - a.latitude)
+    val dLon          = Math.toRadians(b.longitude - a.longitude)
+    val lat1          = Math.toRadians(a.latitude)
+    val lat2          = Math.toRadians(b.latitude)
+    val x             =
+      sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2)
+    val c             = 2 * atan2(sqrt(x), sqrt(1 - x))
+    earthRadiusKm * c
 
   private def attempt[A](thunk: => A): IO[GigaMapError, A] =
     ZIO.attempt(thunk).mapError(e => StorageFailure("GigaMap operation failed", Some(e)))

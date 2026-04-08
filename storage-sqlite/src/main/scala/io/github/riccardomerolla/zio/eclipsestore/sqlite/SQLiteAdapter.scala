@@ -4,9 +4,9 @@ import java.nio.file.Path
 
 import zio.*
 
-import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
+import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
+import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, StorageBackend }
 
 /** Convenience wiring for EclipseStore backed by a SQLite storage target. */
 object SQLiteAdapter:
@@ -27,7 +27,7 @@ object SQLiteAdapter:
     storageName: String = "eclipsestore.db",
     connectionString: Option[String] = None,
   ): ZLayer[Any, EclipseStoreError, EclipseStoreService] =
-    ZLayer.succeed(config(basePath, storageName, connectionString)) >>> EclipseStoreService.live
+    ZLayer.succeed(BackendConfig.Sqlite(basePath.resolve(storageName), storageName, connectionString)) >>> StorageBackend.service()
 
   /** Accessor layer if config already provided. */
   val service: ZLayer[EclipseStoreConfig, EclipseStoreError, EclipseStoreService] =

@@ -9,3 +9,5 @@ enum EclipseStoreError extends PersistenceError:
   case AuthError(message: String, cause: Option[Throwable] = None)
   case StoreNotOpen(message: String, cause: Option[Throwable] = None)
   case ConflictError(message: String, cause: Option[Throwable] = None)
+  case MigrationError(message: String, cause: Option[Throwable] = None)
+  case IncompatibleSchemaError(message: String, cause: Option[Throwable] = None)

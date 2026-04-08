@@ -4,6 +4,7 @@ ThisBuild / organizationName := "Riccardo Merolla"
 ThisBuild / organizationHomepage := Some(url("https://github.com/riccardomerolla"))
 
 lazy val zioVersion = "2.1.24"
+lazy val zioBlocksVersion = "0.0.33"
 lazy val zioSchemaVersion = "1.8.0"
 lazy val zioJsonVersion = "0.9.0"
 lazy val zioHttpVersion = "3.8.1"
@@ -56,6 +57,9 @@ lazy val root = (project in file("."))
     libraryDependencies ++= Seq(
       "dev.zio" %% "zio" % zioVersion,
       "dev.zio" %% "zio-streams" % zioVersion,
+      "dev.zio" %% "zio-blocks-typeid" % zioBlocksVersion,
+      "dev.zio" %% "zio-blocks-context" % zioBlocksVersion,
+      "dev.zio" %% "zio-blocks-ringbuffer" % zioBlocksVersion,
       "dev.zio" %% "zio-schema" % zioSchemaVersion,
       "dev.zio" %% "zio-schema-derivation" % zioSchemaVersion,
       "dev.zio" %% "zio-schema-json" % zioSchemaVersion,

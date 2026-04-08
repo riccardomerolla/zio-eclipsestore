@@ -353,6 +353,27 @@ object FooService:
 * Use `provideSomeLayer`/`provideLayer` to narrow environments instead of widening dependencies.
 * Combine schedules for retries/backoff, add timeouts or hedging when talking to external systems.
 
+## 10.9 ZIO Blocks Policy
+
+This repository allows selective use of `zio-blocks`, but agents should treat it as an additive toolkit rather than the default abstraction layer.
+
+Repository standards remain:
+
+* `zio.schema.Schema` for schema derivation and serialization boundaries
+* `zio.Chunk` / `NonEmptyChunk` for collection-heavy code
+* ZIO `Scope` / `ZLayer.scoped` for resource safety
+* `ZStream` for streaming pipelines
+
+Operational guidance:
+
+* Prefer current repo standards first.
+* Use `zio-blocks` only when the usage is local, additive, and clearly beneficial.
+* Use `TypeId` for stable type identity or registry metadata when it improves type-handler or migration internals.
+* Use `Context` for typed metadata propagation only when a plain case class or `ZEnvironment` would be clumsier.
+* Use `RingBuffer` only for benchmarked hot paths, buffering internals, or future ingestion/indexing experiments.
+* Do not replace `zio.schema.Schema`, `zio.Chunk`, ZIO `Scope`, or `ZStream` unless the task is an explicit migration.
+* Avoid introducing dual schema/chunk/scope ecosystems in the same feature unless explicitly requested.
+
 ---
 
 # 11. Output Rules for Agent

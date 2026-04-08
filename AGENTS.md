@@ -265,6 +265,30 @@ breaker(effect)
 ZIO.addFinalizer(fiber.interrupt *> cleanup)
 ```
 
+## 10.5 ZIO Blocks Policy
+
+This repository may use selected libraries from `zio-blocks`, but they are **additive tools**, not replacements for the current core stack.
+
+Project defaults remain:
+
+* `zio.schema.Schema` for schema derivation and serialization boundaries
+* `zio.Chunk` / `NonEmptyChunk` for collection-heavy code
+* ZIO `Scope` / `ZLayer.scoped` for resource safety
+* `ZStream` for streaming pipelines
+
+Agents may use `zio-blocks` selectively:
+
+* `TypeId` for stable type identity or registry metadata when it improves type-handler or migration internals
+* `Context` for typed metadata propagation only when a plain case class or `ZEnvironment` would be clumsier
+* `RingBuffer` only for benchmarked hot paths, buffering internals, or future ingestion/indexing experiments
+
+Rules:
+
+* Prefer the repository's existing ZIO and `zio-schema` abstractions first.
+* Use `zio-blocks` only when the usage is local, additive, and clearly beneficial.
+* Do **not** replace `zio.schema.Schema`, `zio.Chunk`, ZIO `Scope`, or `ZStream` unless the task is an explicit migration.
+* Avoid introducing dual schema/chunk/scope ecosystems inside the same feature unless explicitly requested.
+
 ---
 
 # 11. Output Rules for Codex

@@ -58,7 +58,7 @@ final case class IngestionReport[K, V](
   batches: Chunk[BatchReport],
 )
 
-private final case class BatchOutcome[K, V](
+final private case class BatchOutcome[K, V](
   committed: Int,
   skipped: Int,
   parked: Chunk[ParkedRecord[K, V]],
@@ -101,8 +101,9 @@ final case class StreamingPersistenceLive[Root: Schema](
     records
       .grouped(normalizedBatchSize)
       .zipWithIndex
-      .mapZIOPar(normalizedParallelism) { case (batch, index) =>
-        processBatch(batch, index, config)
+      .mapZIOPar(normalizedParallelism) {
+        case (batch, index) =>
+          processBatch(batch, index, config)
       }
       .runFold[IngestionReport[K, V]](IngestionReport[K, V](0, 0, 0, Chunk.empty, Chunk.empty)) {
         case (report, (attempted, outcome, batchReport)) =>
@@ -142,7 +143,7 @@ final case class StreamingPersistenceLive[Root: Schema](
     config: IngestionConfig,
   ): IO[EclipseStoreError, BatchOutcome[K, V]] =
     item match
-      case IngestionItem.Record(key, value)       =>
+      case IngestionItem.Record(key, value)        =>
         storeWithStrategy(StreamRecord(key, value), config.errorStrategy)
       case IngestionItem.Malformed(payload, error) =>
         malformedWithStrategy(payload, error, config.errorStrategy)
@@ -155,13 +156,13 @@ final case class StreamingPersistenceLive[Root: Schema](
       typedStore.store(record.key, record.value)
 
     strategy match
-      case ErrorStrategy.FailFast        =>
+      case ErrorStrategy.FailFast       =>
         persist.as(BatchOutcome(committed = 1, skipped = 0, parked = Chunk.empty))
-      case ErrorStrategy.Skip            =>
+      case ErrorStrategy.Skip           =>
         persist
           .as(BatchOutcome(committed = 1, skipped = 0, parked = Chunk.empty))
           .catchAll(_ => ZIO.succeed(BatchOutcome(committed = 0, skipped = 1, parked = Chunk.empty)))
-      case ErrorStrategy.Park            =>
+      case ErrorStrategy.Park           =>
         persist
           .as(BatchOutcome(committed = 1, skipped = 0, parked = Chunk.empty))
           .catchAll(error =>
@@ -174,7 +175,11 @@ final case class StreamingPersistenceLive[Root: Schema](
             )
           )
       case ErrorStrategy.Retry(retries) =>
-        persist.retry(Schedule.recurs(math.max(0, retries))).as(BatchOutcome(committed = 1, skipped = 0, parked = Chunk.empty))
+        persist.retry(Schedule.recurs(math.max(0, retries))).as(BatchOutcome(
+          committed = 1,
+          skipped = 0,
+          parked = Chunk.empty,
+        ))
 
   private def malformedWithStrategy[K, V](
     payload: String,
@@ -196,7 +201,8 @@ final case class StreamingPersistenceLive[Root: Schema](
         )
 
 object StreamingPersistence:
-  def live[Root: Tag: Schema](descriptor: RootDescriptor[Root]): ZLayer[TypedStore, Nothing, StreamingPersistence[Root]] =
+  def live[Root: Tag: Schema](descriptor: RootDescriptor[Root])
+    : ZLayer[TypedStore, Nothing, StreamingPersistence[Root]] =
     ZLayer.fromZIO {
       for
         typedStore <- ZIO.service[TypedStore]
@@ -213,7 +219,8 @@ object StreamingPersistence:
   ): ZIO[StreamingPersistence[Root], EclipseStoreError, IngestionReport[K, V]] =
     ZIO.serviceWithZIO[StreamingPersistence[Root]](_.ingest(records, config))
 
-  def extract[Root: Tag, V: Schema](predicate: V => Boolean): ZStream[StreamingPersistence[Root], EclipseStoreError, V] =
+  def extract[Root: Tag, V: Schema](predicate: V => Boolean)
+    : ZStream[StreamingPersistence[Root], EclipseStoreError, V] =
     ZStream.serviceWithStream[StreamingPersistence[Root]](_.extract(predicate))
 
   def extractBatches[Root: Tag, V: Schema](

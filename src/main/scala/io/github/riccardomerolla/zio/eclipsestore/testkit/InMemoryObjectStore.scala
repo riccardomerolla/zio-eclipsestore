@@ -8,4 +8,3 @@ import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService,
 object InMemoryObjectStore:
   def layer[Root: Tag](descriptor: RootDescriptor[Root]): ULayer[ObjectStore[Root]] =
     EclipseStoreService.inMemory >>> ObjectStore.live(descriptor)
-

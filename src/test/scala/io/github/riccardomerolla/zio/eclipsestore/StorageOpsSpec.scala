@@ -5,16 +5,24 @@ import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 
 import zio.*
+import zio.schema.{ DeriveSchema, Schema }
 import zio.test.*
 
-import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
+import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, EclipseStoreConfig }
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
-import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleStatus, StorageOps }
+import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleStatus, ObjectStore, StorageBackend, StorageOps }
 
 object StorageOpsSpec extends ZIOSpecDefault:
+  final case class NativeNotes(notes: Chunk[String])
+
+  given Schema[NativeNotes] = DeriveSchema.gen[NativeNotes]
+  given Tag[NativeNotes]    = Tag.derived
 
   private val rootDescriptor =
     RootDescriptor.concurrentMap[String, String]("storage-ops-root")
+
+  private val nativeDescriptor =
+    RootDescriptor.fromSchema[NativeNotes]("native-storage-ops-root", () => NativeNotes(Chunk.empty))
 
   private def deleteDirectory(path: Path): Unit =
     if Files.exists(path) then Files.walk(path).sorted(Comparator.reverseOrder()).forEach(Files.delete)
@@ -23,6 +31,9 @@ object StorageOpsSpec extends ZIOSpecDefault:
     ZLayer.succeed(EclipseStoreConfig.make(path).copy(rootDescriptors = Chunk.single(rootDescriptor))) >>>
       io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService.live >>>
       StorageOps.live(rootDescriptor)
+
+  private def nativeLayer(snapshotPath: Path) =
+    ZLayer.succeed(BackendConfig.NativeLocal(snapshotPath)) >>> StorageBackend.rootServices(nativeDescriptor)
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("StorageOps")(
@@ -141,6 +152,72 @@ object StorageOpsSpec extends ZIOSpecDefault:
               case LifecycleStatus.Running(_) => true
               case _                          => false,
             reopened.contains("yes"),
+          )
+        }
+      },
+      test("NativeLocal export/import preserves immutable roots through StorageOps") {
+        ZIO.scoped {
+          for
+            snapshotDir <- ZIO.attemptBlocking(Files.createTempDirectory("storage-ops-native"))
+            exportedDir <- ZIO.attemptBlocking(Files.createTempDirectory("storage-ops-native-export"))
+            restoredDir <- ZIO.attemptBlocking(Files.createTempDirectory("storage-ops-native-restored"))
+            _           <- ZIO.addFinalizer(
+                             ZIO.attemptBlocking {
+                               deleteDirectory(snapshotDir)
+                               deleteDirectory(exportedDir)
+                               deleteDirectory(restoredDir)
+                             }.orDie
+                           )
+            snapshotPath = snapshotDir.resolve("root.json")
+            exportPath   = exportedDir.resolve("export.json")
+            restorePath  = restoredDir.resolve("root.json")
+            _           <- (for
+                             _ <- ObjectStore.replace(NativeNotes(Chunk("a", "b")))
+                             _ <- StorageOps.exportTo[NativeNotes](exportPath)
+                           yield ()).provideLayer(nativeLayer(snapshotPath))
+            imported    <- (for
+                             _    <- StorageOps.importFrom[NativeNotes](exportPath)
+                             root <- StorageOps.load[NativeNotes]
+                           yield root).provideLayer(nativeLayer(restorePath))
+          yield assertTrue(imported == NativeNotes(Chunk("a", "b")))
+        }
+      },
+      test("NativeLocal restart and housekeep keep checkpointed immutable roots available") {
+        ZIO.scoped {
+          for
+            snapshotDir <- ZIO.attemptBlocking(Files.createTempDirectory("storage-ops-native-restart"))
+            _           <- ZIO.addFinalizer(ZIO.attemptBlocking(deleteDirectory(snapshotDir)).orDie)
+            snapshotPath = snapshotDir.resolve("root.json")
+            status      <- (for
+                             _      <- ObjectStore.replace(NativeNotes(Chunk("kept")))
+                             _      <- StorageOps.checkpoint[NativeNotes]
+                             _      <- ObjectStore.replace(NativeNotes(Chunk("transient")))
+                             status <- StorageOps.restart[NativeNotes]
+                             _      <- StorageOps.housekeep[NativeNotes]
+                           yield status).provideLayer(nativeLayer(snapshotPath))
+            reopened    <- StorageOps.load[NativeNotes].provideLayer(nativeLayer(snapshotPath))
+          yield assertTrue(
+            status match
+              case LifecycleStatus.Running(_) => true
+              case _                          => false,
+            reopened == NativeNotes(Chunk("kept")),
+          )
+        }
+      },
+      test("NativeLocal shutdown persists the final snapshot before stopping") {
+        ZIO.scoped {
+          for
+            snapshotDir <- ZIO.attemptBlocking(Files.createTempDirectory("storage-ops-native-shutdown"))
+            _           <- ZIO.addFinalizer(ZIO.attemptBlocking(deleteDirectory(snapshotDir)).orDie)
+            snapshotPath = snapshotDir.resolve("root.json")
+            status      <- (for
+                             _      <- ObjectStore.replace(NativeNotes(Chunk("persisted-on-shutdown")))
+                             status <- StorageOps.shutdown[NativeNotes]
+                           yield status).provideLayer(nativeLayer(snapshotPath))
+            reopened    <- StorageOps.load[NativeNotes].provideLayer(nativeLayer(snapshotPath))
+          yield assertTrue(
+            status == LifecycleStatus.Stopped,
+            reopened == NativeNotes(Chunk("persisted-on-shutdown")),
           )
         }
       },

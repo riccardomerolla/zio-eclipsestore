@@ -10,6 +10,33 @@ import com.typesafe.config.{ Config as HoconConfig, ConfigFactory }
 
 object EclipseStoreConfigZIO:
 
+  final private case class NativeLocalInput(snapshotPath: Path)
+
+  final private case class FileSystemInput(path: Path)
+
+  final private case class MemoryMappedInput(path: Path)
+
+  final private case class InMemoryInput(prefix: Option[String])
+
+  final private case class SqliteInput(
+    path: Path,
+    storageName: Option[String],
+    connectionString: Option[String],
+    busyTimeoutMs: Option[Int],
+    cacheSizeKb: Option[Int],
+    pageSizeBytes: Option[Int],
+    journalMode: Option[String],
+    synchronousMode: Option[String],
+  )
+
+  final private case class BackendInput(
+    nativeLocal: Option[NativeLocalInput],
+    fileSystem: Option[FileSystemInput],
+    memoryMapped: Option[MemoryMappedInput],
+    inMemory: Option[InMemoryInput],
+    sqlite: Option[SqliteInput],
+  )
+
   final private case class ConfigInput(
     maxParallelism: Option[Int],
     batchSize: Option[Int],
@@ -22,6 +49,7 @@ object EclipseStoreConfigZIO:
     backupDeletionDirectory: Option[Path],
     backupExternalProperties: Option[Map[String, String]],
     autoRegisterSchemaHandlers: Option[Boolean],
+    backend: Option[BackendInput],
   )
 
   private given zio.Config[Path] =
@@ -62,6 +90,9 @@ object EclipseStoreConfigZIO:
   private val config: zio.Config[ConfigInput] =
     deriveConfig[ConfigInput].nested("eclipsestore")
 
+  private val defaultBackendConfig: BackendConfig =
+    BackendConfig.InMemory("eclipsestore")
+
   private def resolveStorageTarget(config: HoconConfig): StorageTarget =
     val base   = "eclipsestore.storageTarget"
     val sqlite = s"$base.sqlite"
@@ -96,6 +127,44 @@ object EclipseStoreConfigZIO:
       val prefix = if config.hasPath(inMem) then config.getString(inMem) else "eclipsestore"
       StorageTarget.InMemory(prefix)
 
+  private def resolveBackendConfig(configInput: ConfigInput, hocon: HoconConfig): BackendConfig =
+    val backendBase = "eclipsestore.backend"
+
+    if hocon.hasPath(s"$backendBase.nativeLocal.snapshotPath") then
+      configInput.backend.flatMap(_.nativeLocal) match
+        case Some(nativeLocal) => BackendConfig.NativeLocal(nativeLocal.snapshotPath)
+        case None              => defaultBackendConfig
+    else if hocon.hasPath(s"$backendBase.fileSystem.path") then
+      configInput.backend.flatMap(_.fileSystem) match
+        case Some(fileSystem) => BackendConfig.FileSystem(fileSystem.path)
+        case None             => defaultBackendConfig
+    else if hocon.hasPath(s"$backendBase.memoryMapped.path") then
+      configInput.backend.flatMap(_.memoryMapped) match
+        case Some(memoryMapped) => BackendConfig.MemoryMapped(memoryMapped.path)
+        case None               => defaultBackendConfig
+    else if hocon.hasPath(s"$backendBase.sqlite.path") then
+      configInput.backend.flatMap(_.sqlite) match
+        case Some(sqlite) =>
+          BackendConfig.Sqlite(
+            path = sqlite.path,
+            storageName = sqlite.storageName.getOrElse("eclipsestore.db"),
+            connectionString = sqlite.connectionString,
+            busyTimeoutMs = sqlite.busyTimeoutMs,
+            cacheSizeKb = sqlite.cacheSizeKb,
+            pageSizeBytes = sqlite.pageSizeBytes,
+            journalMode = sqlite.journalMode,
+            synchronousMode = sqlite.synchronousMode,
+          )
+        case None         => defaultBackendConfig
+    else if hocon.hasPath(s"$backendBase.inMemory") then
+      configInput.backend.flatMap(_.inMemory) match
+        case Some(inMemory) => BackendConfig.InMemory(inMemory.prefix.getOrElse("eclipsestore"))
+        case None           => BackendConfig.InMemory("eclipsestore")
+    else
+      BackendConfig
+        .fromStorageTarget(resolveStorageTarget(hocon))
+        .getOrElse(defaultBackendConfig)
+
   private def loadConfig(provider: zio.ConfigProvider, hocon: HoconConfig)
     : ZIO[Any, zio.Config.Error, EclipseStoreConfig] =
     for in <- provider.load(config)
@@ -118,12 +187,28 @@ object EclipseStoreConfigZIO:
       eagerStoringEvaluator = defaults.eagerStoringEvaluator,
     )
 
+  private def loadBackendConfig(provider: zio.ConfigProvider, hocon: HoconConfig)
+    : ZIO[Any, zio.Config.Error, BackendConfig] =
+    for in <- provider.load(config)
+    yield resolveBackendConfig(in, hocon)
+
   val fromResourcePath: ZLayer[Any, zio.Config.Error, EclipseStoreConfig] =
     ZLayer.fromZIO(loadConfig(TypesafeConfigProvider.fromResourcePath(), ConfigFactory.load()))
+
+  val backendFromResourcePath: ZLayer[Any, zio.Config.Error, BackendConfig] =
+    ZLayer.fromZIO(loadBackendConfig(TypesafeConfigProvider.fromResourcePath(), ConfigFactory.load()))
 
   def fromFile(path: Path): ZLayer[Any, zio.Config.Error, EclipseStoreConfig] =
     ZLayer.fromZIO(
       loadConfig(
+        TypesafeConfigProvider.fromHoconFile(path.toFile),
+        ConfigFactory.parseFile(path.toFile).resolve(),
+      )
+    )
+
+  def backendFromFile(path: Path): ZLayer[Any, zio.Config.Error, BackendConfig] =
+    ZLayer.fromZIO(
+      loadBackendConfig(
         TypesafeConfigProvider.fromHoconFile(path.toFile),
         ConfigFactory.parseFile(path.toFile).resolve(),
       )

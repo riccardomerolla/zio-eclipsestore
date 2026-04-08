@@ -143,3 +143,15 @@ lazy val storageSqlite = (project in file("storage-sqlite"))
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
   )
   .dependsOn(root)
+
+lazy val bench = (project in file("bench"))
+  .enablePlugins(JmhPlugin)
+  .settings(
+    name := "zio-eclipsestore-bench",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      "dev.zio" %% "zio-schema" % zioSchemaVersion,
+      "dev.zio" %% "zio-schema-derivation" % zioSchemaVersion
+    )
+  )
+  .dependsOn(root)

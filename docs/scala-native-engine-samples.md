@@ -2,6 +2,8 @@
 
 This page is written in an `mdoc`-friendly style and documents the sample applications that exercise the Scala-native engine roadmap.
 
+For backend-level setup and runtime semantics, see the dedicated [`NativeLocal Guide`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
+
 ## Bookstore v2
 
 The bookstore sample uses typed roots, `ObjectStore`, `StorageOps`, and a migration plan for legacy data.
@@ -28,7 +30,43 @@ The sample demonstrates:
 - typed roots via `BookstoreRoot.descriptor`
 - ACID-style updates via `ObjectStore.transact`
 - operational lifecycle via `StorageOps.backup` and `StorageOps.restart`
+- backend selection via `BackendConfig` and `StorageBackend.rootServices(...)`
 - backwards-compatible schema evolution via `MigrationPlan`
+
+For a local-first runtime, the same sample can switch to `NativeLocal` without changing its service surface:
+
+```scala
+val nativeLocalLayer =
+  BookstoreWorkflow.layer(
+    BackendConfig.NativeLocal(Paths.get("bookstore-data/bookstore.snapshot.json"))
+  )
+```
+
+## NativeLocal Todo
+
+The todo sample is the smallest end-to-end example of the NativeLocal backend. It uses an immutable schema-derived root, `ObjectStore.modify`, and `StorageOps.restart` against a single snapshot file.
+
+```scala
+val layer =
+  TodoService.layer(Paths.get("todo-native-local.snapshot.json"))
+
+val program =
+  for
+    first    <- TodoService.add("write snapshot guide")
+    _        <- TodoService.add("verify restart semantics")
+    _        <- TodoService.complete(first.id)
+    reloaded <- TodoService.checkpointAndReload
+  yield reloaded.map(todo => (todo.title, todo.completed))
+```
+
+The sample demonstrates:
+
+- `BackendConfig.NativeLocal` as the layer-facing backend selector
+- immutable whole-root updates through `ObjectStore.modify`
+- explicit persistence via `StorageOps.checkpoint` and `StorageOps.restart`
+- a single-file local-first workflow suitable for small applications
+
+For configuration loading and snapshot lifecycle details, see the [`NativeLocal Guide`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
 
 ## Semantic Search
 
@@ -72,4 +110,5 @@ These samples and their specs cover the roadmap topics expected from the adoptio
 The executable checks for these examples live in:
 
 - [`BookstoreWorkflowSpec.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/examples/bookstore/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/bookstore/BookstoreWorkflowSpec.scala)
+- [`TodoNativeLocalAppSpec.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalAppSpec.scala)
 - [`SemanticSearchAppSpec.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/examples/gigamap-cli/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/gigamap/SemanticSearchAppSpec.scala)

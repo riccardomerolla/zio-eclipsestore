@@ -125,6 +125,16 @@ final private case class InstrumentedObjectStore[Root](
   override def load: IO[EclipseStoreError, Root] =
     StorageObservability.observe(metrics, settings, "object-store.load")(underlying.load)
 
+  override def replace(root: Root): IO[EclipseStoreError, Unit] =
+    StorageObservability.observe(metrics, settings, "object-store.replace", persistedObjects = 1)(
+      underlying.replace(root)
+    )
+
+  override def modify[A](f: Root => IO[EclipseStoreError, (A, Root)]): IO[EclipseStoreError, A] =
+    StorageObservability.observe(metrics, settings, "object-store.modify", persistedObjects = 1)(
+      underlying.modify(f)
+    )
+
   override def storeSubgraph(subgraph: AnyRef): IO[EclipseStoreError, Unit] =
     StorageObservability.observe(metrics, settings, "object-store.store-subgraph", persistedObjects = 1)(
       underlying.storeSubgraph(subgraph)

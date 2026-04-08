@@ -22,41 +22,53 @@ object BookstoreWorkflowSpec extends ZIOSpecDefault:
       }.flatMap(use)
     }
 
+  private def persistenceScenario(backendConfig: BackendConfig, backupPath: Path) =
+    val layer = BookstoreWorkflow.layer(backendConfig)
+
+    val firstRun =
+      for
+        _ <- BookstoreWorkflow.createBook(
+               CreateBookRequest("Zionomicon", "John de Goes", BigDecimal(49), Chunk("zio", "scala"))
+             )
+        _ <- BookstoreWorkflow.createBook(
+               CreateBookRequest("Inside EclipseStore", "Riccardo", BigDecimal(39), Chunk("storage"))
+             )
+        beforeRestart <- BookstoreWorkflow.inventory
+        _             <- BookstoreWorkflow.backup(backupPath)
+      yield beforeRestart
+
+    val secondRun = BookstoreWorkflow.inventory.provideLayer(layer)
+
+    for
+      initial     <- firstRun.provideLayer(layer).either
+      reloaded    <- secondRun.either
+      backupFiles <- ZIO.attemptBlocking {
+                       Files.walk(backupPath).iterator().asScala.count(Files.isRegularFile(_))
+                     }
+    yield (initial, reloaded) match
+      case (Right(beforeRestart), Right(afterRestart)) =>
+        assertTrue(
+          beforeRestart.sorted.map(_.title) == Chunk("Inside EclipseStore", "Zionomicon"),
+          afterRestart.sorted.map(_.title) == Chunk("Inside EclipseStore", "Zionomicon"),
+          backupFiles > 0,
+        )
+      case _                                       =>
+        assertTrue(false)
+
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("BookstoreWorkflow")(
-      test("creates, queries, backs up, and reloads data after restart") {
+      test("creates, queries, backs up, and reloads data after restart on filesystem backend") {
         withTempDirectory("bookstore-workflow") { dataPath =>
           withTempDirectory("bookstore-backup") { backupPath =>
-            val layer    = BookstoreWorkflow.layer(BackendConfig.FileSystem(dataPath))
-            val firstRun =
-              for
-                _ <- BookstoreWorkflow.createBook(
-                       CreateBookRequest("Zionomicon", "John de Goes", BigDecimal(49), Chunk("zio", "scala"))
-                     )
-                _ <- BookstoreWorkflow.createBook(
-                       CreateBookRequest("Inside EclipseStore", "Riccardo", BigDecimal(39), Chunk("storage"))
-                     )
-                beforeRestart <- BookstoreWorkflow.inventory
-                _             <- BookstoreWorkflow.backup(backupPath)
-              yield beforeRestart
-
-            val secondRun = BookstoreWorkflow.inventory.provideLayer(layer)
-
-            for
-              initial <- firstRun.provideLayer(layer).either
-              reloaded <- secondRun.either
-              backupFiles <- ZIO.attemptBlocking {
-                               Files.walk(backupPath).iterator().asScala.count(Files.isRegularFile(_))
-                             }
-            yield (initial, reloaded) match
-              case (Right(beforeRestart), Right(afterRestart)) =>
-                assertTrue(
-                  beforeRestart.sorted.map(_.title) == Chunk("Inside EclipseStore", "Zionomicon"),
-                  afterRestart.sorted.map(_.title) == Chunk("Inside EclipseStore", "Zionomicon"),
-                  backupFiles > 0,
-                )
-              case _                                       =>
-                assertTrue(false)
+            persistenceScenario(BackendConfig.FileSystem(dataPath), backupPath)
+          }
+        }
+      },
+      test("creates, queries, backs up, and reloads data after restart on NativeLocal backend") {
+        withTempDirectory("bookstore-native-local") { snapshotDir =>
+          withTempDirectory("bookstore-native-backup") { backupPath =>
+            val snapshotPath = snapshotDir.resolve("bookstore-root.json")
+            persistenceScenario(BackendConfig.NativeLocal(snapshotPath), backupPath)
           }
         }
       },

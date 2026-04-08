@@ -74,9 +74,10 @@ object BookstoreWorkflow:
   def layer(backendConfig: BackendConfig): ZLayer[Any, EclipseStoreError, BookstoreWorkflow] =
     ZLayer.make[BookstoreWorkflow](
       ZLayer.succeed(backendConfig),
-      StorageBackend.service(_.copy(rootDescriptors = Chunk.single(BookstoreRoot.descriptor))),
-      ObjectStore.live(BookstoreRoot.descriptor),
-      StorageOps.live(BookstoreRoot.descriptor),
+      StorageBackend.rootServices(
+        BookstoreRoot.descriptor,
+        _.copy(rootDescriptors = Chunk.single(BookstoreRoot.descriptor)),
+      ),
       ZLayer.fromFunction(BookstoreWorkflowLive.apply),
     )
 

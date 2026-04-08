@@ -5,8 +5,10 @@ import java.nio.file.Files
 import scala.jdk.CollectionConverters.*
 
 import zio.*
+import zio.schema.Schema
 
 import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, EclipseStoreConfig, StorageTarget }
+import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 
 /** Layer-managed backend selection for the EclipseStore substrate. */
@@ -41,6 +43,27 @@ object StorageBackend:
     configure: EclipseStoreConfig => EclipseStoreConfig = identity
   ): ZLayer[BackendConfig, EclipseStoreError, EclipseStoreService] =
     configLayer(configure) >>> EclipseStoreService.live >>> serializedService
+
+  def rootServices[Root: Tag: Schema](
+    descriptor: RootDescriptor[Root],
+    configure: EclipseStoreConfig => EclipseStoreConfig = identity,
+  ): ZLayer[BackendConfig, EclipseStoreError, ObjectStore[Root] & StorageOps[Root]] =
+    ZLayer.scopedEnvironment {
+      for
+        config       <- ZIO.service[BackendConfig]
+        selectedLayer = config match
+                          case nativeLocal: BackendConfig.NativeLocal =>
+                            NativeLocal.live(nativeLocal.snapshotPath, descriptor)
+                          case other                                  =>
+                            ZLayer.succeed(other) >>> service(
+                              configure
+                            ) >>> (ObjectStore.live(descriptor) ++ StorageOps.live(descriptor))
+        built        <- selectedLayer.build
+      yield ZEnvironment[ObjectStore[Root], StorageOps[Root]](
+        built.get[ObjectStore[Root]],
+        built.get[StorageOps[Root]],
+      )
+    }
 
   private val serializedService: ZLayer[EclipseStoreService, Nothing, EclipseStoreService] =
     ZLayer.fromZIO {

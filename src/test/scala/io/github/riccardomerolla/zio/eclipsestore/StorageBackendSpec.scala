@@ -4,13 +4,27 @@ import java.nio.file.{ Files, Path }
 import java.util.Comparator
 
 import zio.*
+import zio.schema.{ DeriveSchema, Schema }
 import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.BackendConfig
+import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, StorageBackend }
+import io.github.riccardomerolla.zio.eclipsestore.service.{
+  EclipseStoreService,
+  ObjectStore,
+  StorageBackend,
+  StorageOps,
+}
 
 object StorageBackendSpec extends ZIOSpecDefault:
+  final case class NativeCounter(total: Int)
+
+  given Schema[NativeCounter] = DeriveSchema.gen[NativeCounter]
+  given Tag[NativeCounter]    = Tag.derived
+
+  private val nativeCounterDescriptor =
+    RootDescriptor.fromSchema[NativeCounter]("native-counter", () => NativeCounter(0))
 
   private def deleteDirectory(path: Path): UIO[Unit] =
     ZIO.attemptBlocking {
@@ -92,6 +106,39 @@ object StorageBackendSpec extends ZIOSpecDefault:
             yield decoded
 
           assertTrue(roundTrip == Right(config))
+        }
+      },
+      test("NativeLocal backend config wires the shared root services") {
+        ZIO.scoped {
+          for
+            snapshotPath <- ZIO.attemptBlocking(Files.createTempFile("storage-backend-native-local", ".json"))
+            _            <- ZIO.attemptBlocking(Files.deleteIfExists(snapshotPath)).ignore
+            _            <- ZIO.addFinalizer(ZIO.attemptBlocking(Files.deleteIfExists(snapshotPath)).ignore)
+            layer         = ZLayer.succeed(BackendConfig.NativeLocal(snapshotPath)) >>>
+                              StorageBackend.rootServices(nativeCounterDescriptor)
+            _            <- (for
+                              _ <- ObjectStore.replace(NativeCounter(1))
+                              _ <- StorageOps.checkpoint[NativeCounter]
+                            yield ()).provideLayer(layer)
+            out          <- ObjectStore.load[NativeCounter].provideLayer(layer)
+            exists       <- ZIO.attemptBlocking(Files.exists(snapshotPath))
+          yield assertTrue(out == NativeCounter(1), exists)
+        }
+      },
+      test("NativeLocal startup fails with a typed schema error when the snapshot is corrupt") {
+        ZIO.scoped {
+          for
+            snapshotPath <- ZIO.attemptBlocking(Files.createTempFile("storage-backend-native-corrupt", ".json"))
+            _            <- ZIO.addFinalizer(ZIO.attemptBlocking(Files.deleteIfExists(snapshotPath)).ignore)
+            _            <- ZIO.attemptBlocking(Files.writeString(snapshotPath, "{ this is not valid json"))
+            layer         = ZLayer.succeed(BackendConfig.NativeLocal(snapshotPath)) >>>
+                              StorageBackend.rootServices(nativeCounterDescriptor)
+            built        <- layer.build.either
+          yield built match
+            case Left(EclipseStoreError.IncompatibleSchemaError(message, _)) =>
+              assertTrue(message.contains("Failed to decode NativeLocal snapshot payload"))
+            case other                                                       =>
+              assertTrue(other.isLeft)
         }
       },
     )

@@ -35,12 +35,12 @@ object FaultInjector:
   val triggeredOperations: ZIO[FaultInjector, Nothing, Chunk[String]] =
     ZIO.serviceWithZIO[FaultInjector](_.triggeredOperations)
 
-private final case class FaultPlan(
+final private case class FaultPlan(
   error: EclipseStoreError,
   cleanup: UIO[Unit],
 )
 
-private final case class InMemoryFaultInjector(
+final private case class InMemoryFaultInjector(
   plans: Ref[Map[String, Chunk[FaultPlan]]],
   triggered: Ref[Chunk[String]],
 ) extends FaultInjector:
@@ -77,4 +77,3 @@ private final case class InMemoryFaultInjector(
 
   override def triggeredOperations: UIO[Chunk[String]] =
     triggered.get
-

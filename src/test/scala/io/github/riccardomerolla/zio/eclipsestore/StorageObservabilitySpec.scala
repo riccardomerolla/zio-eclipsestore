@@ -124,6 +124,17 @@ final private case class FakeObjectStore() extends ObjectStore[ConcurrentHashMap
   override def load: IO[EclipseStoreError, ConcurrentHashMap[String, Int]] =
     ZIO.succeed(root)
 
+  override def replace(root: ConcurrentHashMap[String, Int]): IO[EclipseStoreError, Unit] =
+    ZIO.succeed {
+      this.root.clear()
+      this.root.putAll(root)
+    }
+
+  override def modify[A](
+    f: ConcurrentHashMap[String, Int] => IO[EclipseStoreError, (A, ConcurrentHashMap[String, Int])]
+  ): IO[EclipseStoreError, A] =
+    f(root).flatMap { case (result, updated) => replace(updated).as(result) }
+
   override def storeSubgraph(subgraph: AnyRef): IO[EclipseStoreError, Unit] =
     ZIO.unit
 

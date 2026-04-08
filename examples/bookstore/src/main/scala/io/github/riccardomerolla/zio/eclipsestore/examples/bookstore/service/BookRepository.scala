@@ -5,7 +5,8 @@ import zio.*
 import java.util.UUID
 
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.*
-import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
+import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
+import io.github.riccardomerolla.zio.eclipsestore.service.{ ObjectStore, Transaction }
 import scala.jdk.CollectionConverters.*
 
 enum BookRepositoryError:
@@ -20,50 +21,70 @@ trait BookRepository:
   def delete(id: BookId): IO[BookRepositoryError, Unit]
   def list: IO[BookRepositoryError, Chunk[Book]]
 
-final case class BookRepositoryLive(store: TypedStore) extends BookRepository:
+final case class BookRepositoryLive(store: ObjectStore[BookstoreRoot]) extends BookRepository:
   private def withRoot: IO[BookRepositoryError, BookstoreRoot] =
-    store.typedRoot(BookstoreRoot.descriptor).mapError(err => BookRepositoryError.StorageFailure(err.toString))
+    store.load.mapError(err => BookRepositoryError.StorageFailure(err.toString))
 
-  private def persist(root: BookstoreRoot): IO[BookRepositoryError, Unit] =
-    store.storePersist(root).mapError(err => BookRepositoryError.StorageFailure(err.toString))
+  private def missing(id: BookId): EclipseStoreError =
+    EclipseStoreError.QueryError(s"Book ${id.value} not found", None)
 
   override def create(payload: CreateBookRequest): IO[BookRepositoryError, Book] =
-    for
-      root <- withRoot
-      id    = BookId(UUID.randomUUID())
-      book  = Book(id, payload.title, payload.author, payload.price, payload.tags)
-      _    <- ZIO.succeed(root.storage.put(id.value, book))
-      _    <- persist(root)
-    yield book
+    store
+      .transact(
+        Transaction.effect { root =>
+          ZIO.attempt {
+            val id   = BookId(UUID.randomUUID())
+            val book = Book(id, payload.title, payload.author, payload.price, payload.tags)
+            root.storage.put(id.value, book)
+            book
+          }.mapError(cause => EclipseStoreError.StorageError("Failed to create book", Some(cause)))
+        }
+      )
+      .mapError(err => BookRepositoryError.StorageFailure(err.toString))
 
   override def update(id: BookId, payload: UpdateBookRequest): IO[BookRepositoryError, Book] =
-    for
-      root    <- withRoot
-      updated <- Option(root.storage.get(id.value)) match
-                   case Some(existing) =>
-                     val recalculated = existing.copy(
-                       title = payload.title.getOrElse(existing.title),
-                       author = payload.author.getOrElse(existing.author),
-                       price = payload.price.getOrElse(existing.price),
-                       tags = payload.tags.getOrElse(existing.tags),
-                     )
-                     root.storage.put(id.value, recalculated)
-                     ZIO.succeed(recalculated)
-                   case None           =>
-                     ZIO.fail(BookRepositoryError.NotFound(id))
-      _       <- persist(root)
-    yield updated
+    store
+      .transact(
+        Transaction.effect { root =>
+          Option(root.storage.get(id.value)) match
+            case Some(existing) =>
+              val recalculated = existing.copy(
+                title = payload.title.getOrElse(existing.title),
+                author = payload.author.getOrElse(existing.author),
+                price = payload.price.getOrElse(existing.price),
+                tags = payload.tags.getOrElse(existing.tags),
+              )
+              ZIO.succeed {
+                root.storage.put(id.value, recalculated)
+                recalculated
+              }
+            case None           =>
+              ZIO.fail(missing(id))
+        }
+      )
+      .mapError {
+        case EclipseStoreError.QueryError(message, _) if message.contains(id.value.toString) =>
+          BookRepositoryError.NotFound(id)
+        case err                      => BookRepositoryError.StorageFailure(err.toString)
+      }
 
   override def get(id: BookId): IO[BookRepositoryError, Option[Book]] =
     withRoot.map(root => Option(root.storage.get(id.value)))
 
   override def delete(id: BookId): IO[BookRepositoryError, Unit] =
-    for
-      root <- withRoot
-      _    <- Option(root.storage.remove(id.value)) match
-                case Some(_) => persist(root)
-                case None    => ZIO.fail(BookRepositoryError.NotFound(id))
-    yield ()
+    store
+      .transact(
+        Transaction.effect { root =>
+          Option(root.storage.remove(id.value)) match
+            case Some(_) => ZIO.unit
+            case None    => ZIO.fail(missing(id))
+        }
+      )
+      .mapError {
+        case EclipseStoreError.QueryError(message, _) if message.contains(id.value.toString) =>
+          BookRepositoryError.NotFound(id)
+        case err                      => BookRepositoryError.StorageFailure(err.toString)
+      }
 
   override def list: IO[BookRepositoryError, Chunk[Book]] =
     withRoot.map(root => Chunk.fromIterable(root.storage.values().asScala.toList))
@@ -84,5 +105,5 @@ object BookRepository:
   val list: ZIO[BookRepository, BookRepositoryError, Chunk[Book]] =
     ZIO.serviceWithZIO[BookRepository](_.list)
 
-  val live: ZLayer[TypedStore, Nothing, BookRepository] =
+  val live: ZLayer[ObjectStore[BookstoreRoot], Nothing, BookRepository] =
     ZLayer.fromFunction(BookRepositoryLive.apply)

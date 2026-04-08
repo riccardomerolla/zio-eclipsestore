@@ -30,10 +30,11 @@ object StreamingPersistenceSpec extends ZIOSpecDefault:
     inMemoryTypedStore ++ (inMemoryTypedStore >>> StreamingPersistence.live(descriptor))
 
   @annotation.nowarn("cat=deprecation")
-  private def persistentLayer(path: Path): ZLayer[Any, EclipseStoreError, StreamingPersistence[StreamRoot] & TypedStore] =
+  private def persistentLayer(path: Path)
+    : ZLayer[Any, EclipseStoreError, StreamingPersistence[StreamRoot] & TypedStore] =
     val typedStoreLayer =
       ZLayer.succeed(
-      EclipseStoreConfig(storageTarget = StorageTarget.FileSystem(path))
+        EclipseStoreConfig(storageTarget = StorageTarget.FileSystem(path))
       ) >>>
         TypedStore.handlersFor[String, Event] >>>
         EclipseStoreService.live >>>
@@ -117,47 +118,48 @@ object StreamingPersistenceSpec extends ZIOSpecDefault:
           dir <- tempDirectory("streaming-interrupt")
           out <- ZIO.scoped {
                    for {
-                     env <- persistentLayer(dir).build
-                     fiber <- StreamingPersistence
-                       .ingest[StreamRoot, String, Event](
-                         delayedInput,
-                         IngestionConfig(batchSize = 8, parallelism = 1, errorStrategy = ErrorStrategy.FailFast),
-                       )
-                       .provideEnvironment(env)
-                       .fork
-                     _ <- Live.live(ZIO.sleep(150.millis))
-                     _ <- fiber.interrupt
+                     env    <- persistentLayer(dir).build
+                     fiber  <-
+                       StreamingPersistence
+                         .ingest[StreamRoot, String, Event](
+                           delayedInput,
+                           IngestionConfig(batchSize = 8, parallelism = 1, errorStrategy = ErrorStrategy.FailFast),
+                         )
+                         .provideEnvironment(env)
+                         .fork
+                     _      <- Live.live(ZIO.sleep(150.millis))
+                     _      <- fiber.interrupt
                      values <- TypedStore.fetchAll[Event].provideEnvironment(env)
                    } yield values
                  }
         yield assertTrue(out.nonEmpty, out.size < 120)
       },
       test("parallel ingestion from multiple fibers does not lose records") {
-        val first =
+        val first  =
           ZStream.fromIterable(1 to 200).map(index => IngestionItem.Record(s"a:$index", event(index)))
         val second =
           ZStream.fromIterable(201 to 400).map(index => IngestionItem.Record(s"b:$index", event(index)))
 
         ZIO.scoped {
           for
-            env      <- inMemoryLayer.build
-            reportA  <- StreamingPersistence
-                          .ingest[StreamRoot, String, Event](
-                            first,
-                            IngestionConfig(batchSize = 32, parallelism = 2, errorStrategy = ErrorStrategy.FailFast),
-                          )
-                          .provideEnvironment(env)
-                          .fork
-            reportB  <- StreamingPersistence
-                          .ingest[StreamRoot, String, Event](
-                            second,
-                            IngestionConfig(batchSize = 32, parallelism = 2, errorStrategy = ErrorStrategy.FailFast),
-                          )
-                          .provideEnvironment(env)
-                          .fork
-            doneA    <- reportA.join
-            doneB    <- reportB.join
-            values   <- TypedStore.fetchAll[Event].provideEnvironment(env)
+            env     <- inMemoryLayer.build
+            reportA <- StreamingPersistence
+                         .ingest[StreamRoot, String, Event](
+                           first,
+                           IngestionConfig(batchSize = 32, parallelism = 2, errorStrategy = ErrorStrategy.FailFast),
+                         )
+                         .provideEnvironment(env)
+                         .fork
+            reportB <- StreamingPersistence
+                         .ingest[StreamRoot, String, Event](
+                           second,
+                           IngestionConfig(batchSize = 32, parallelism = 2, errorStrategy = ErrorStrategy.FailFast),
+                         )
+                         .provideEnvironment(env)
+                         .fork
+            doneA   <- reportA.join
+            doneB   <- reportB.join
+            values  <- TypedStore.fetchAll[Event].provideEnvironment(env)
           yield assertTrue(
             doneA.committed == 200,
             doneB.committed == 200,
@@ -191,10 +193,11 @@ object StreamingPersistenceSpec extends ZIOSpecDefault:
 
           (
             for
-              report  <- StreamingPersistence.ingest[StreamRoot, String, Event](
-                           input,
-                           IngestionConfig(batchSize = batchSize, parallelism = 1, errorStrategy = ErrorStrategy.FailFast),
-                         )
+              report  <-
+                StreamingPersistence.ingest[StreamRoot, String, Event](
+                  input,
+                  IngestionConfig(batchSize = batchSize, parallelism = 1, errorStrategy = ErrorStrategy.FailFast),
+                )
               batches <- StreamingPersistence
                            .extractBatches[StreamRoot, Event](_ => true, batchSize)
                            .runCollect

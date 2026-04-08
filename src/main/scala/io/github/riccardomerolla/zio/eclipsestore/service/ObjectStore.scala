@@ -13,6 +13,8 @@ import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 trait ObjectStore[Root]:
   def descriptor: RootDescriptor[Root]
   def load: IO[EclipseStoreError, Root]
+  def replace(root: Root): IO[EclipseStoreError, Unit]
+  def modify[A](f: Root => IO[EclipseStoreError, (A, Root)]): IO[EclipseStoreError, A]
   def storeSubgraph(subgraph: AnyRef): IO[EclipseStoreError, Unit]
   def storeRoot: IO[EclipseStoreError, Unit]
   def checkpoint: IO[EclipseStoreError, Unit]
@@ -50,6 +52,12 @@ object ObjectStore:
   def storeSubgraph[Root: Tag](subgraph: AnyRef): ZIO[ObjectStore[Root], EclipseStoreError, Unit] =
     ZIO.serviceWithZIO[ObjectStore[Root]](_.storeSubgraph(subgraph))
 
+  def replace[Root: Tag](root: Root): ZIO[ObjectStore[Root], EclipseStoreError, Unit] =
+    ZIO.serviceWithZIO[ObjectStore[Root]](_.replace(root))
+
+  def modify[Root: Tag, A](f: Root => IO[EclipseStoreError, (A, Root)]): ZIO[ObjectStore[Root], EclipseStoreError, A] =
+    ZIO.serviceWithZIO[ObjectStore[Root]](_.modify(f))
+
   def storeRoot[Root: Tag]: ZIO[ObjectStore[Root], EclipseStoreError, Unit] =
     ZIO.serviceWithZIO[ObjectStore[Root]](_.storeRoot)
 
@@ -66,6 +74,23 @@ final case class ObjectStoreLive[Root](
 ) extends ObjectStore[Root]:
   override def load: IO[EclipseStoreError, Root] =
     underlying.root(descriptor)
+
+  override def replace(root: Root): IO[EclipseStoreError, Unit] =
+    ZIO.fail(
+      EclipseStoreError.QueryError(
+        s"Whole-root replacement is not supported by the EclipseStore-backed ObjectStore for ${descriptor.id}",
+        None,
+      )
+    )
+
+  override def modify[A](f: Root => IO[EclipseStoreError, (A, Root)]): IO[EclipseStoreError, A] =
+    txSemaphore.withPermit {
+      for
+        current           <- load
+        (result, updated) <- f(current)
+        _                 <- replace(updated)
+      yield result
+    }
 
   override def storeSubgraph(subgraph: AnyRef): IO[EclipseStoreError, Unit] =
     underlying.persist(subgraph) *> checkpoint

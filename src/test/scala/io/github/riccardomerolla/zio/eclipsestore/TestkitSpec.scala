@@ -7,25 +7,27 @@ import java.util.concurrent.ConcurrentHashMap
 import scala.jdk.CollectionConverters.*
 
 import zio.*
-import zio.schema.Schema
+import zio.schema.{ DeriveSchema, Schema }
 import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
-import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, ObjectStore, Transaction }
-import io.github.riccardomerolla.zio.eclipsestore.testkit.{
-  BddScenario,
-  FaultInjector,
-  InMemoryObjectStore,
-  PersistenceGenerators,
-  PersistenceSpec,
-}
+import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, ObjectStore, StorageOps, Transaction }
+import io.github.riccardomerolla.zio.eclipsestore.testkit.*
 
 object TestkitSpec extends ZIOSpecDefault:
+  final case class NativeEventLog(events: Chunk[PersistenceGenerators.MessageEvent])
+
+  given Schema[NativeEventLog] = DeriveSchema.gen[NativeEventLog]
+  given Tag[NativeEventLog]    = Tag.derived
+
   private val mapDescriptor =
     RootDescriptor.concurrentMap[String, String]("testkit-root")
+
+  private val nativeEventLogDescriptor =
+    RootDescriptor.fromSchema[NativeEventLog]("native-event-log", () => NativeEventLog(Chunk.empty))
 
   private def deleteDirectory(path: Path): Unit =
     if Files.exists(path) then Files.walk(path).sorted(Comparator.reverseOrder()).forEach(Files.delete)
@@ -86,19 +88,19 @@ object TestkitSpec extends ZIOSpecDefault:
       test("fault injector cleans up and reports configured failures") {
         ZIO.scoped {
           for
-            injector <- FaultInjector.inMemory.build.map(_.get[FaultInjector])
-            cleaned  <- Ref.make(false)
-            _        <- FaultInjector
-                          .failNext(
-                            operation = "backup",
-                            error = EclipseStoreError.ResourceError("boom", None),
-                            cleanup = cleaned.set(true),
-                          )
-                          .provideEnvironment(ZEnvironment(injector))
-            result   <- FaultInjector
-                          .inject("backup")(ZIO.succeed("ok"))
-                          .provideEnvironment(ZEnvironment(injector))
-                          .either
+            injector  <- FaultInjector.inMemory.build.map(_.get[FaultInjector])
+            cleaned   <- Ref.make(false)
+            _         <- FaultInjector
+                           .failNext(
+                             operation = "backup",
+                             error = EclipseStoreError.ResourceError("boom", None),
+                             cleanup = cleaned.set(true),
+                           )
+                           .provideEnvironment(ZEnvironment(injector))
+            result    <- FaultInjector
+                           .inject("backup")(ZIO.succeed("ok"))
+                           .provideEnvironment(ZEnvironment(injector))
+                           .either
             triggered <- FaultInjector.triggeredOperations.provideEnvironment(ZEnvironment(injector))
             cleanuped <- cleaned.get
           yield assertTrue(
@@ -112,16 +114,16 @@ object TestkitSpec extends ZIOSpecDefault:
         check(PersistenceGenerators.messageEvent) { event =>
           ZIO.scoped {
             for
-              path <- ZIO.attemptBlocking(Files.createTempDirectory("testkit-typed-store")).orDie
-              _    <- ZIO.addFinalizer(ZIO.attemptBlocking(deleteDirectory(path)).orDie)
-              liveLayer =
+              path      <- ZIO.attemptBlocking(Files.createTempDirectory("testkit-typed-store")).orDie
+              _         <- ZIO.addFinalizer(ZIO.attemptBlocking(deleteDirectory(path)).orDie)
+              liveLayer  =
                 ZLayer.succeed(EclipseStoreConfig.make(path)) >>>
                   TypedStore.handlersFor[String, PersistenceGenerators.MessageEvent] >>>
                   EclipseStoreService.live >>>
                   TypedStore.live
-              memLayer =
+              memLayer   =
                 EclipseStoreService.inMemory >>> TypedStore.live
-              liveSpec =
+              liveSpec   =
                 for {
                   _      <- TypedStore.store("evt", event)
                   loaded <- TypedStore.fetch[String, PersistenceGenerators.MessageEvent]("evt")
@@ -142,5 +144,31 @@ object TestkitSpec extends ZIOSpecDefault:
         ZIO.succeed(Chunk("live", "contract")),
       ) { (live, inMemory) =>
         assertTrue(live == inMemory)
+      },
+      test("NativeLocal temp layer supports model-vs-engine immutable root sequences") {
+        check(Gen.chunkOfBounded(1, 8)(PersistenceGenerators.messageEvent)) { events =>
+          val expected = NativeEventLog(events)
+
+          PersistenceSpec.compare(
+            live = ZIO.scoped {
+              for
+                env <- NativeLocalObjectStore.tempLayer(nativeEventLogDescriptor).build
+                r   <- (for
+                         _ <- ZIO.foreachDiscard(events) { event =>
+                                ObjectStore.modify[NativeEventLog, Unit](root =>
+                                  ZIO.succeed(((), root.copy(events = root.events :+ event)))
+                                )
+                              }
+                         _ <- StorageOps.checkpoint[NativeEventLog]
+                         _ <- StorageOps.restart[NativeEventLog]
+                         r <- ObjectStore.load[NativeEventLog]
+                       yield r).provideEnvironment(env)
+              yield r
+            },
+            baseline = ZIO.succeed(expected),
+          ) { (live, model) =>
+            assertTrue(live == model, live.events == events)
+          }
+        }
       },
     )

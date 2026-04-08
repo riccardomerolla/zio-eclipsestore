@@ -1,105 +1,100 @@
 package io.github.riccardomerolla.zio.eclipsestore
 
-import java.nio.file.Files
-import java.time.Instant
-import java.util.concurrent.ConcurrentHashMap
-import java.util.{ ArrayList, Iterator as JIterator, List as JList }
-
-import scala.jdk.CollectionConverters.*
+import java.io.{ ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream }
+import java.util.concurrent.atomic.AtomicInteger
 
 import zio.*
 import zio.test.*
 
-import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
-import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
-import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
-import org.eclipse.serializer.reference.Lazy
+import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 
 object LazyLoadingSpec extends ZIOSpecDefault:
 
-  final case class Turnover(amount: Double, timestamp: Instant)
+  final case class LazyRoot(
+    customers: Lazy[List[String]],
+    invoices: Lazy[List[Int]],
+    audits: Lazy[List[String]],
+  ) extends Serializable
 
-  final class BusinessYear(private var turnovers: Lazy[JList[Turnover]] = null):
-    private def ensureTurnovers(): JList[Turnover] =
-      val current = Lazy.get(turnovers)
-      if current != null then current // scalafix:ok DisableSyntax.null
-      else
-        val fresh = new ArrayList[Turnover]()
-        turnovers = Lazy.Reference(fresh)
-        fresh
+  final case class LazyEnvelope(value: Lazy[Int]) extends Serializable
 
-    def add(turnover: Turnover): Unit =
-      ensureTurnovers().add(turnover)
+  private def roundTrip[A](value: A): Task[A] =
+    ZIO.attempt {
+      val bytes = ByteArrayOutputStream()
+      val out   = ObjectOutputStream(bytes)
+      out.writeObject(value)
+      out.flush()
+      out.close()
 
-    def stream: Iterator[Turnover] =
-      val data = Lazy.get(turnovers)
-      if data == null then Iterator.empty // scalafix:ok DisableSyntax.null
-      else
-        val it: JIterator[Turnover] = data.iterator()
-        it.asScala
+      val in = ObjectInputStream(ByteArrayInputStream(bytes.toByteArray))
+      try in.readObject().asInstanceOf[A]
+      finally in.close()
+    }
 
-  override def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
+  override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("Lazy loading primitives")(
-      test("Lazy.Reference exposes value and updates touched timestamp") {
-        val ref        = LazyHelpers.reference("lazy-value")
-        val touched0   = ref.lastTouched()
-        val value      = ref.get()
-        val touchedNow = ref.lastTouched()
-        assertTrue(value == "lazy-value", touchedNow >= touched0, LazyHelpers.isLoaded(ref))
+      test("only explicitly loaded lazy fields are materialized") {
+        for
+          loaded <- Ref.make(List.empty[String])
+          root    = LazyRoot(
+                      customers = Lazy.fromZIO(loaded.update(_ :+ "customers").as(List("alice", "bob"))),
+                      invoices = Lazy.fromZIO(loaded.update(_ :+ "invoices").as(List(1, 2, 3))),
+                      audits = Lazy.fromZIO(loaded.update(_ :+ "audits").as(List("created"))),
+                    )
+          _      <- root.customers.load
+          _      <- root.invoices.load
+          seen   <- loaded.get
+        yield assertTrue(seen == List("customers", "invoices"))
       },
-      test("LazyReferenceManager registers and iterates lazy references") {
-        val ref1      = LazyHelpers.reference("a")
-        val ref2      = LazyHelpers.reference("b")
-        val manager   = LazyHelpers.newManager()
-        manager.register(ref1)
-        manager.register(ref2)
-        val buffer    = scala.collection.mutable.ListBuffer.empty[Lazy[?]]
-        manager.iterate(
-          new java.util.function.Consumer[Lazy[?]]:
-            override def accept(t: Lazy[?]): Unit = buffer += t
+      test("concurrent loads coalesce to a single underlying fetch") {
+        for
+          starts  <- Ref.make(0)
+          gate    <- Promise.make[Nothing, Unit]
+          lazyRef  = Lazy.fromZIO(
+                       starts.updateAndGet(_ + 1) *> gate.await *> ZIO.succeed("loaded-once")
+                     )
+          fibers  <- ZIO.foreach(1 to 20)(_ => lazyRef.load.fork)
+          _       <- gate.succeed(())
+          results <- ZIO.foreach(fibers)(_.join)
+          count   <- starts.get
+        yield assertTrue(results.forall(_ == "loaded-once"), count == 1)
+      },
+      test("loading after the backing store has closed fails with a typed store-not-open error") {
+        val program =
+          ZIO.scoped {
+            for
+              open   <- Ref.make(true)
+              _      <- ZIO.addFinalizer(open.set(false))
+              lazyRef = Lazy.fromZIO(
+                          open.get.flatMap {
+                            case true  => ZIO.succeed(42)
+                            case false => ZIO.fail(EclipseStoreError.StoreNotOpen("Scoped loader is closed", None))
+                          }
+                        )
+            yield lazyRef
+          }
+
+        for
+          lazyRef <- program
+          result  <- lazyRef.load.either
+        yield assertTrue(
+          result == Left(EclipseStoreError.StoreNotOpen("Scoped loader is closed", None))
         )
-        val collected = buffer.size
-        assertTrue(collected == 2)
       },
-      test("Lazy reference clear resets loaded state and touched timestamp") {
-        val ref      = LazyHelpers.reference("to-clear")
-        val touched  = ref.lastTouched()
-        val value    = ref.get()
-        val afterGet = ref.lastTouched()
-        assertTrue(
-          value == "to-clear",
-          afterGet >= touched,
-          LazyHelpers.isLoaded(ref),
-        )
+      test("serialized lazy fields return unloaded and load on demand after deserialization") {
+        for
+          value       <- ZIO.succeed(LazyEnvelope(Lazy.succeed(99)))
+          serialized  <- roundTrip(value)
+          beforeLoad  <- serialized.value.isLoaded
+          loadedValue <- serialized.value.load
+        yield assertTrue(!beforeLoad, loadedValue == 99)
       },
-      test("lazy list survives reload and loads on demand") {
-        ZIO.scoped {
-          for
-            dir           <- ZIO.attemptBlocking(Files.createTempDirectory("lazy-root"))
-            _             <- ZIO.addFinalizer(
-                               ZIO
-                                 .attemptBlocking(Files.walk(dir).sorted(java.util.Comparator.reverseOrder()).forEach(Files.delete))
-                                 .ignore
-                             )
-            layer          = ZLayer.succeed(
-                               EclipseStoreConfig(storageTarget = StorageTarget.FileSystem(dir))
-                             ) >>> EclipseStoreService.live
-            rootDescriptor = RootDescriptor(
-                               id = "lazy-root",
-                               initializer = () => new ConcurrentHashMap[Int, BusinessYear](),
-                             )
-            _             <- (for
-                               root <- EclipseStoreService.root(rootDescriptor)
-                               year  = root.computeIfAbsent(2023, _ => new BusinessYear())
-                               _     = year.add(Turnover(100.0, Instant.EPOCH))
-                               _    <- EclipseStoreService.persist(root)
-                             yield ()).provideLayer(layer)
-            reloaded      <- (for
-                               root <- EclipseStoreService.root(rootDescriptor)
-                               year  = root.get(2023)
-                               data  = Option(year).toList.flatMap(_.stream.toList)
-                             yield data).provideLayer(layer)
-          yield assertTrue(reloaded.nonEmpty, reloaded.head.amount == 100.0)
-        }
+      test("memoized successful loads stay observationally equivalent to a single load") {
+        for
+          counter <- ZIO.succeed(AtomicInteger(0))
+          lazyRef  = Lazy.fromZIO(ZIO.succeed(counter.incrementAndGet()))
+          first   <- lazyRef.load
+          second  <- lazyRef.load
+        yield assertTrue(first == 1, second == 1, counter.get() == 1)
       },
     )

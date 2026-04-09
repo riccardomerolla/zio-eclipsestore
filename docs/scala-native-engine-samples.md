@@ -2,7 +2,7 @@
 
 This page is written in an `mdoc`-friendly style and documents the sample applications that exercise the Scala-native engine roadmap.
 
-For backend-level setup and runtime semantics, see the dedicated [`NativeLocal Guide`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
+For backend-level setup and runtime semantics, see the dedicated [`NativeLocal Guide`](native-local-guide.md).
 
 ## Bookstore v2
 
@@ -66,7 +66,7 @@ The sample demonstrates:
 - explicit persistence via `StorageOps.checkpoint` and `StorageOps.restart`
 - a single-file local-first workflow suitable for small applications
 
-For configuration loading and snapshot lifecycle details, see the [`NativeLocal Guide`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
+For configuration loading and snapshot lifecycle details, see the [`NativeLocal Guide`](native-local-guide.md).
 
 ## Semantic Search
 
@@ -96,19 +96,19 @@ The sample demonstrates:
 
 These samples and their specs cover the roadmap topics expected from the adoption track:
 
-- roots: [`ObjectStore`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/ObjectStore.scala)
-- lazy loading: [`Lazy`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/Lazy.scala)
-- ACID effects: [`Transaction`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/ObjectStore.scala)
-- storage targets: [`BackendConfig`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/config/BackendConfig.scala)
-- migration: [`Migration`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/schema/Migration.scala)
-- streaming: [`StreamingPersistence`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/schema/StreamingPersistence.scala)
-- lifecycle ops: [`StorageOps`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/StorageOps.scala)
-- testkit: [`PersistenceSpec`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/PersistenceSpec.scala)
+- roots: [`ObjectStore`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/ObjectStore.scala)
+- lazy loading: [`Lazy`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/Lazy.scala)
+- ACID effects: [`Transaction`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/ObjectStore.scala)
+- storage targets: [`BackendConfig`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/config/BackendConfig.scala)
+- migration: [`Migration`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/schema/Migration.scala)
+- streaming: [`StreamingPersistence`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/schema/StreamingPersistence.scala)
+- lifecycle ops: [`StorageOps`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/StorageOps.scala)
+- testkit: [`PersistenceSpec`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/PersistenceSpec.scala)
 
 ## Verification
 
 The executable checks for these examples live in:
 
-- [`BookstoreWorkflowSpec.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/examples/bookstore/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/bookstore/BookstoreWorkflowSpec.scala)
-- [`TodoNativeLocalAppSpec.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalAppSpec.scala)
-- [`SemanticSearchAppSpec.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/examples/gigamap-cli/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/gigamap/SemanticSearchAppSpec.scala)
+- [`BookstoreWorkflowSpec.scala`](../examples/bookstore/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/bookstore/BookstoreWorkflowSpec.scala)
+- [`TodoNativeLocalAppSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalAppSpec.scala)
+- [`SemanticSearchAppSpec.scala`](../examples/gigamap-cli/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/gigamap/SemanticSearchAppSpec.scala)

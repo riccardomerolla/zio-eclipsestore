@@ -35,12 +35,12 @@ The root type must have a `Schema[Root]`, and the root descriptor defines initia
 
 Relevant implementation points:
 
-- [`BackendConfig.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/config/BackendConfig.scala)
-- [`StorageBackend.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/StorageBackend.scala)
-- [`NativeLocal.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/NativeLocal.scala)
-- [`NativeLocalSTM.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/NativeLocalSTM.scala)
-- [`SnapshotCodec.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/SnapshotCodec.scala)
-- [`NativeLocalObjectStore.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/NativeLocalObjectStore.scala)
+- [`BackendConfig.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/config/BackendConfig.scala)
+- [`StorageBackend.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/StorageBackend.scala)
+- [`NativeLocal.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/NativeLocal.scala)
+- [`NativeLocalSTM.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/NativeLocalSTM.scala)
+- [`SnapshotCodec.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/SnapshotCodec.scala)
+- [`NativeLocalObjectStore.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/NativeLocalObjectStore.scala)
 
 ## Config Loading
 
@@ -89,13 +89,13 @@ The backend is optimized for determinism and simplicity, not multi-process coord
 
 ## Optional STM Adapter
 
-If you want STM composition over the same NativeLocal root, use the additive [`NativeLocalSTM.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/NativeLocalSTM.scala) service through `NativeLocal.liveWithSTM(...)`.
+If you want STM composition over the same NativeLocal root, use the additive [`NativeLocalSTM.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/NativeLocalSTM.scala) service through `NativeLocal.liveWithSTM(...)`.
 
 The adapter commits STM updates into the shared root state and keeps `ObjectStore` and `StorageOps` semantics intact. It is intended as a stretch tool for local workflows, not as a replacement for the core backend contracts.
 
 ## Testkit Support
 
-For specs, the repository exposes scoped temporary NativeLocal layers through [`NativeLocalObjectStore.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/NativeLocalObjectStore.scala):
+For specs, the repository exposes scoped temporary NativeLocal layers through [`NativeLocalObjectStore.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/NativeLocalObjectStore.scala):
 
 - `tempLayer(...)` for `ObjectStore[Root] & StorageOps[Root]`
 - `tempLayerWithSTM(...)` for `ObjectStore[Root] & StorageOps[Root] & NativeLocalSTM[Root]`
@@ -104,15 +104,15 @@ These helpers create and clean up a temporary snapshot directory automatically, 
 
 Examples:
 
-- [`TestkitSpec.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/TestkitSpec.scala)
-- [`NativeLocalSTMSpec.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/NativeLocalSTMSpec.scala)
+- [`TestkitSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/TestkitSpec.scala)
+- [`NativeLocalSTMSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/NativeLocalSTMSpec.scala)
 
 ## Example
 
 The smallest runnable example is the todo app:
 
-- [`TodoNativeLocalApp.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalApp.scala)
-- [`TodoNativeLocalAppSpec.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalAppSpec.scala)
+- [`TodoNativeLocalApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalApp.scala)
+- [`TodoNativeLocalAppSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalAppSpec.scala)
 
 Run it with:
 
@@ -135,7 +135,7 @@ Use `NativeLocal` when you want:
 - schema-driven persistence without EclipseStore runtime configuration
 - one-file snapshot export and restore semantics
 
-If the root is an immutable `Map`, you can also layer the additive [`LocalRepo.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/LocalRepo.scala) helpers on top of `ObjectStore` for basic CRUD without introducing a domain-specific repository immediately.
+If the root is an immutable `Map`, you can also layer the additive [`LocalRepo.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/LocalRepo.scala) helpers on top of `ObjectStore` for basic CRUD without introducing a domain-specific repository immediately.
 
 Use the EclipseStore-backed targets when you need:
 

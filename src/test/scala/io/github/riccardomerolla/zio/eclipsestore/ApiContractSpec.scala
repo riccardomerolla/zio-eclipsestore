@@ -8,12 +8,14 @@ import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.{ EclipseStoreError, PersistenceError }
 import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
-import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
+import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LocalRepo, NativeLocalSTM }
 
 object ApiContractSpec extends ZIOSpecDefault:
 
   private val publicApiTypes = List(
     classOf[EclipseStoreService],
+    classOf[LocalRepo[?, ?]],
+    classOf[NativeLocalSTM[?]],
     classOf[TypedStore],
   )
 

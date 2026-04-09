@@ -204,6 +204,39 @@ object StorageOpsSpec extends ZIOSpecDefault:
           )
         }
       },
+      test("NativeLocal scheduled checkpoints persist immutable roots after simulated time advances") {
+        ZIO.scoped {
+          for
+            snapshotDir <- ZIO.attemptBlocking(Files.createTempDirectory("storage-ops-native-scheduled"))
+            _           <- ZIO.addFinalizer(ZIO.attemptBlocking(deleteDirectory(snapshotDir)).orDie)
+            snapshotPath = snapshotDir.resolve("root.json")
+            before      <- ZIO.scoped {
+                             for
+                               env      <- nativeLayer(snapshotPath).build
+                               scopeEnv <- ZIO.environment[Scope]
+                               _        <- StorageOps
+                                             .scheduleCheckpoints[NativeNotes](Schedule.spaced(1.hour))
+                                             .provideEnvironment(scopeEnv ++ env)
+                               _        <- ObjectStore
+                                             .replace(NativeNotes(Chunk("scheduled-native-local")))
+                                             .provideEnvironment(env)
+                               before   <- StorageOps
+                                             .load[NativeNotes]
+                                             .provideLayer(nativeLayer(snapshotPath).fresh)
+                               _        <- TestClock.adjust(1.hour)
+                             yield before
+                           }
+            after       <- StorageOps.load[NativeNotes].provideLayer(nativeLayer(snapshotPath).fresh)
+            status      <- StorageOps.status.provideLayer(nativeLayer(snapshotPath))
+          yield assertTrue(
+            before == NativeNotes(Chunk.empty),
+            after == NativeNotes(Chunk("scheduled-native-local")),
+            status match
+              case LifecycleStatus.Running(_) => true
+              case _                          => false,
+          )
+        }
+      },
       test("NativeLocal shutdown persists the final snapshot before stopping") {
         ZIO.scoped {
           for

@@ -9,7 +9,7 @@ import zio.schema.Schema
 
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.service.{ NativeLocal, ObjectStore, StorageOps }
+import io.github.riccardomerolla.zio.eclipsestore.service.{ NativeLocal, NativeLocalSTM, ObjectStore, StorageOps }
 
 object NativeLocalObjectStore:
   def layer[Root: Tag: Schema](
@@ -30,6 +30,22 @@ object NativeLocalObjectStore:
       yield ZEnvironment[ObjectStore[Root], StorageOps[Root]](
         built.get[ObjectStore[Root]],
         built.get[StorageOps[Root]],
+      )
+    }
+
+  def tempLayerWithSTM[Root: Tag: Schema](
+    descriptor: RootDescriptor[Root],
+    prefix: String = "native-local-testkit-stm",
+  ): ZLayer[Scope, EclipseStoreError, ObjectStore[Root] & StorageOps[Root] & NativeLocalSTM[Root]] =
+    ZLayer.scopedEnvironment {
+      for
+        snapshotDir <- ZIO.acquireRelease(createTempDirectory(prefix))(deleteDirectory)
+        snapshotPath = snapshotDir.resolve(s"${descriptor.id}.snapshot.json")
+        built       <- NativeLocal.liveWithSTM(snapshotPath, descriptor).build
+      yield ZEnvironment[ObjectStore[Root], StorageOps[Root], NativeLocalSTM[Root]](
+        built.get[ObjectStore[Root]],
+        built.get[StorageOps[Root]],
+        built.get[NativeLocalSTM[Root]],
       )
     }
 

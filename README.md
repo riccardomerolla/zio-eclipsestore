@@ -277,6 +277,8 @@ It uses a schema-derived immutable root, stores all state in one snapshot file, 
 
 For setup, HOCON loading, and snapshot semantics, see [`docs/native-local-guide.md`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
 
+For tests, the NativeLocal testkit also exposes scoped temp layers through [`NativeLocalObjectStore.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/NativeLocalObjectStore.scala), including an STM-enabled variant.
+
 ### Bookstore Backend Demo
 
 The `BookstoreServer` example reimplements the backend portion of EclipseStore’s [Bookstore demo](https://github.com/eclipse-store/bookstore-demo) using:

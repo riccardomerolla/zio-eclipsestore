@@ -8,13 +8,20 @@ import scala.jdk.CollectionConverters.*
 
 import zio.*
 import zio.schema.{ DeriveSchema, Schema }
+import zio.stm.STM
 import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
-import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, ObjectStore, StorageOps, Transaction }
+import io.github.riccardomerolla.zio.eclipsestore.service.{
+  EclipseStoreService,
+  NativeLocalSTM,
+  ObjectStore,
+  StorageOps,
+  Transaction,
+}
 import io.github.riccardomerolla.zio.eclipsestore.testkit.*
 
 object TestkitSpec extends ZIOSpecDefault:
@@ -158,6 +165,33 @@ object TestkitSpec extends ZIOSpecDefault:
                                 ObjectStore.modify[NativeEventLog, Unit](root =>
                                   ZIO.succeed(((), root.copy(events = root.events :+ event)))
                                 )
+                              }
+                         _ <- StorageOps.checkpoint[NativeEventLog]
+                         _ <- StorageOps.restart[NativeEventLog]
+                         r <- ObjectStore.load[NativeEventLog]
+                       yield r).provideEnvironment(env)
+              yield r
+            },
+            baseline = ZIO.succeed(expected),
+          ) { (live, model) =>
+            assertTrue(live == model, live.events == events)
+          }
+        }
+      },
+      test("NativeLocal STM temp layer supports model-vs-engine immutable root sequences") {
+        check(Gen.chunkOfBounded(1, 8)(PersistenceGenerators.messageEvent)) { events =>
+          val expected = NativeEventLog(events)
+
+          PersistenceSpec.compare(
+            live = ZIO.scoped {
+              for
+                env <- NativeLocalObjectStore.tempLayerWithSTM(nativeEventLogDescriptor).build
+                r   <- (for
+                         _ <- ZIO.foreachDiscard(events) { event =>
+                                NativeLocalSTM.atomically[NativeEventLog, Unit] { ref =>
+                                  ref.update(root => root.copy(events = root.events :+ event)) *>
+                                    STM.unit
+                                }
                               }
                          _ <- StorageOps.checkpoint[NativeEventLog]
                          _ <- StorageOps.restart[NativeEventLog]

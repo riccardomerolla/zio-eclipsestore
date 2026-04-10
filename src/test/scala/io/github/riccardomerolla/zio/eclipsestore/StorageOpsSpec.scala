@@ -214,15 +214,15 @@ object StorageOpsSpec extends ZIOSpecDefault:
                              for
                                env      <- nativeLayer(snapshotPath).build
                                scopeEnv <- ZIO.environment[Scope]
-                               _        <- StorageOps
-                                             .scheduleCheckpoints[NativeNotes](Schedule.spaced(1.hour))
-                                             .provideEnvironment(scopeEnv ++ env)
-                               _        <- ObjectStore
-                                             .replace(NativeNotes(Chunk("scheduled-native-local")))
-                                             .provideEnvironment(env)
                                before   <- StorageOps
                                              .load[NativeNotes]
                                              .provideLayer(nativeLayer(snapshotPath).fresh)
+                               _        <- ObjectStore
+                                             .replace(NativeNotes(Chunk("scheduled-native-local")))
+                                             .provideEnvironment(env)
+                               _        <- StorageOps
+                                             .scheduleCheckpoints[NativeNotes](Schedule.spaced(1.hour))
+                                             .provideEnvironment(scopeEnv ++ env)
                                _        <- TestClock.adjust(1.hour)
                              yield before
                            }

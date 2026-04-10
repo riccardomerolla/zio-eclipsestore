@@ -84,13 +84,12 @@ final case class StorageLockLive[Root](
             _              <-
               if currentVersion == observedVersion then ZIO.unit
               else
-                completeWrite(committed = false).commit *>
-                  ZIO.fail(
-                    EclipseStoreError.ConflictError(
-                      s"Optimistic update conflict: expected version $observedVersion but observed $currentVersion",
-                      None,
-                    )
+                ZIO.fail(
+                  EclipseStoreError.ConflictError(
+                    s"Optimistic update conflict: expected version $observedVersion but observed $currentVersion",
+                    None,
                   )
+                )
             root           <- store.load
             snapshot       <- RootSnapshot.capture(root)
             exit           <- commit(root, prepared).exit

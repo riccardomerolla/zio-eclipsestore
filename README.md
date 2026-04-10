@@ -19,6 +19,7 @@ A ZIO-based library for type-safe, efficient, and boilerplate-free access to [Ec
 - **Performance Tuning**: Configure channels, caches, compression, off-heap page store, encryption
 - **Lazy Loading & Eager Storing**: Lazy references/collections plus eager-field semantics via examples
 - **ZIO Config Integration**: Load `EclipseStoreConfig` from HOCON/resources via zio-config
+- **Backend Selection**: Use `BackendConfig` and `StorageBackend.rootServices(...)` to switch between EclipseStore-backed engines and `NativeLocal`
 - **Effect-Oriented**: All operations are ZIO effects for composability
 
 ## Schema Integration
@@ -152,23 +153,46 @@ libraryDependencies ++= Seq(
 )
 ```
 
-Or load configuration with zio-config (HOCON/resource file):
+Or load EclipseStore-native configuration with zio-config (HOCON/resource file):
 
 ```scala
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfigZIO
-import zio.ConfigProvider
 
 val layer =
   EclipseStoreConfigZIO
-    .fromResource("application.conf") // or fromFile(Paths.get("..."))
-    .map(_.toLayer)                    // provides EclipseStoreConfig
-    .orDie
+    .fromResourcePath // or fromFile(Paths.get("application.conf"))
 
 // application.conf example (partial)
 // eclipsestore {
-//   storage-target = "filesystem:/data/store"
-//   performance.channel-count = 8
-//   backup.directory = "/data/backup"
+//   storageTarget {
+//     fileSystem {
+//       path = "/data/store"
+//     }
+//   }
+//   performance {
+//     channelCount = 8
+//   }
+//   backupDirectory = "/data/backup"
+// }
+```
+
+For local-first root services, load `BackendConfig` instead and let `StorageBackend.rootServices(...)` choose the engine:
+
+```scala
+import java.nio.file.Paths
+import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, EclipseStoreConfigZIO }
+import io.github.riccardomerolla.zio.eclipsestore.service.StorageBackend
+
+val backendLayer =
+  EclipseStoreConfigZIO.backendFromFile(Paths.get("application.conf"))
+
+// application.conf example (partial)
+// eclipsestore {
+//   backend {
+//     nativeLocal {
+//       snapshotPath = "./data/bookstore.snapshot.json"
+//     }
+//   }
 // }
 ```
 
@@ -233,13 +257,58 @@ We ported the original EclipseStore “getting started” and “embedded storag
 
 Run them with `sbt "runMain full.qualified.ClassName"`.
 
+### Benchmarks
+
+NativeLocal performance baselines live in the dedicated `bench` project and use JMH.
+
+```bash
+sbt "bench/Jmh/run .*NativeLocalBenchmark.*"
+```
+
+### NativeLocal Todo Sample
+
+For a minimal local-first sample, run the NativeLocal todo app:
+
+```bash
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalApp"
+```
+
+It uses a schema-derived immutable root, stores all state in one snapshot file, and demonstrates `ObjectStore.modify` plus explicit `checkpoint` and `restart`.
+
+If you want protobuf snapshots instead of JSON, run the protobuf variant:
+
+```bash
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalProtobufApp"
+```
+
+For an explicit v1-to-v2 NativeLocal snapshot migration example, run:
+
+```bash
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalVersioningApp"
+```
+
+That sample now demonstrates envelope-backed snapshots plus automatic v1-to-v2 upgrade on startup for a versioned todo model.
+
+For an event-sourced NativeLocal sample that keeps an append-only journal plus a derived snapshot in the same root, run:
+
+```bash
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalEventSourcingApp"
+```
+
+That sample maps the "pure decision + effectful persistence boundary" model onto NativeLocal by replaying journal entries into a projected todo snapshot and checkpointing after every accepted command.
+
+For setup, HOCON loading, and snapshot semantics, see [`docs/native-local-guide.md`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
+
+For tests, the NativeLocal testkit also exposes scoped temp layers through [`NativeLocalObjectStore.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/NativeLocalObjectStore.scala), including an STM-enabled variant.
+
 ### Bookstore Backend Demo
 
 The `BookstoreServer` example reimplements the backend portion of EclipseStore’s [Bookstore demo](https://github.com/eclipse-store/bookstore-demo) using:
 
 - `zio-eclipsestore` for persistence and typed roots
 - Schema-driven handler registration via `RootDescriptor.fromSchema`
-- `TypedStore` for schema-aware repository operations
+- `BackendConfig` and `StorageBackend.rootServices(...)` for backend selection
+- `ObjectStore[BookstoreRoot]` for repository operations
 - `zio-http` for the REST API
 - `zio-json` codecs for request/response bodies
 
@@ -248,6 +317,14 @@ Main entry point: `io.github.riccardomerolla.zio.eclipsestore.examples.bookstore
 ```
 sbt bookstore/run
 ```
+
+Event-sourced NativeLocal variant:
+
+```bash
+sbt "bookstore/runMain io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.BookstoreEventSourcingServerApp"
+```
+
+That variant keeps an append-only bookstore journal plus a derived catalog snapshot in a NativeLocal root, while reusing the same HTTP routes and `BookRepository` interface.
 
 Default port: `8080`. Available routes:
 
@@ -259,7 +336,7 @@ Default port: `8080`. Available routes:
 | `PUT /books/{id}` | Update mutable fields (`UpdateBookRequest`) |
 | `DELETE /books/{id}` | Remove a book and persist the root |
 
-All write operations automatically persist the `BookstoreRoot` and you can trigger checkpoints/backups via `EclipseStoreService` if desired.
+All write operations automatically persist the `BookstoreRoot`, and the same server wiring can run on `FileSystem` or `NativeLocal` by changing the `BackendConfig`.
 
 ### Chat Models Schema Demo
 
@@ -463,6 +540,35 @@ for
   status <- EclipseStoreService.status
 yield status
 ```
+
+### BackendConfig and NativeLocal
+
+`BackendConfig` is the layer-facing backend selector. It covers the EclipseStore-backed targets and `NativeLocal`, which is a schema-driven whole-root snapshot engine for single-process local-first workloads.
+
+```scala
+import java.nio.file.Paths
+
+import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, NativeLocalSerde }
+import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
+import io.github.riccardomerolla.zio.eclipsestore.service.StorageBackend
+
+val jsonBackend =
+  BackendConfig.NativeLocal(Paths.get("./data/root.snapshot.json"))
+
+val protobufBackend =
+  BackendConfig.NativeLocal(
+    Paths.get("./data/root.snapshot.pb"),
+    NativeLocalSerde.Protobuf,
+  )
+
+val services =
+  ZLayer.succeed(protobufBackend) >>>
+    StorageBackend.rootServices(MyRoot.descriptor)
+```
+
+With HOCON, set `eclipsestore.backend.nativeLocal.serde = "protobuf"` to switch the snapshot encoding from JSON to protobuf.
+
+For configuration loading and lifecycle semantics, see [`docs/native-local-guide.md`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
 
 #### Backup targets
 

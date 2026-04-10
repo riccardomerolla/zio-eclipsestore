@@ -3,15 +3,23 @@ package io.github.riccardomerolla.zio.eclipsestore.examples.bookstore
 import zio.*
 import zio.test.*
 
+import io.github.riccardomerolla.zio.eclipsestore.config.BackendConfig
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.*
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.BookRepository
-import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
-import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
+import io.github.riccardomerolla.zio.eclipsestore.service.StorageBackend
 
 object BookRepositorySpec extends ZIOSpecDefault:
 
   private val testLayer: ULayer[BookRepository] =
-    EclipseStoreService.inMemory >>> TypedStore.live >>> BookRepository.live
+    ZLayer.succeed(BackendConfig.InMemory("book-repository-spec")) >>>
+      StorageBackend
+        .rootServices(
+          BookstoreRoot.descriptor,
+          _.copy(rootDescriptors = Chunk.single(BookstoreRoot.descriptor)),
+        )
+        .mapError(err => new RuntimeException(err.toString))
+        .orDie >>>
+      BookRepository.live
 
   override def spec =
     suite("BookRepository")(

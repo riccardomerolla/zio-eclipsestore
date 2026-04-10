@@ -1,0 +1,183 @@
+# NativeLocal Guide
+
+`NativeLocal` is the smallest persistence backend in this repository. It keeps a single schema-derived root in memory and persists that root as one snapshot file on demand.
+
+It is intended for:
+
+- single-process applications
+- one logical root aggregate
+- local-first workflows
+- explicit checkpoint and restart control
+
+It is not a second top-level engine API. The public surface remains `ObjectStore[Root]`, `StorageOps[Root]`, `StorageBackend`, and `BackendConfig`.
+
+## Wiring
+
+Use `BackendConfig.NativeLocal` together with `StorageBackend.rootServices(...)`.
+
+```scala
+import java.nio.file.Paths
+
+import zio.*
+
+import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, NativeLocalSerde }
+import io.github.riccardomerolla.zio.eclipsestore.service.StorageBackend
+
+val backend =
+  BackendConfig.NativeLocal(
+    Paths.get("./data/app.snapshot.pb"),
+    NativeLocalSerde.Protobuf,
+  )
+
+val services =
+  ZLayer.succeed(backend) >>>
+    StorageBackend.rootServices(MyRoot.descriptor)
+```
+
+The root type must have a `Schema[Root]`, and the root descriptor defines initialization and migration behavior.
+
+`NativeLocal` supports two snapshot codecs:
+
+- `NativeLocalSerde.Json` for text snapshots
+- `NativeLocalSerde.Protobuf` for binary protobuf snapshots
+
+Relevant implementation points:
+
+- [`BackendConfig.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/config/BackendConfig.scala)
+- [`StorageBackend.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/StorageBackend.scala)
+- [`NativeLocal.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/NativeLocal.scala)
+- [`NativeLocalSTM.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/NativeLocalSTM.scala)
+- [`SnapshotCodec.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/SnapshotCodec.scala)
+- [`NativeLocalObjectStore.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/NativeLocalObjectStore.scala)
+
+## Config Loading
+
+If you want to select the backend from HOCON, load `BackendConfig` instead of the full `EclipseStoreConfig`.
+
+```scala
+import java.nio.file.Paths
+
+import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfigZIO
+
+val backendLayer =
+  EclipseStoreConfigZIO.backendFromFile(Paths.get("application.conf"))
+```
+
+Example config:
+
+```hocon
+eclipsestore {
+  backend {
+    nativeLocal {
+      snapshotPath = "./data/app.snapshot.pb"
+      serde = "protobuf"
+    }
+  }
+}
+```
+
+`EclipseStoreConfigZIO.backendFromResourcePath(...)` supports the same shape. If both `backend` and legacy `storageTarget` are present, `backend` wins. Accepted serde values are `json`, `proto`, and `protobuf`.
+
+## Snapshot Semantics
+
+`NativeLocal` persists the whole root. There is no partial object-graph storage contract in this backend.
+
+Current behavior:
+
+- startup: load the snapshot if present, otherwise use `RootDescriptor.initializer()`
+- decode failure: fail startup or restore with a typed `EclipseStoreError`
+- `ObjectStore.modify`: serialize immutable whole-root updates behind a gate
+- `StorageOps.checkpoint`: write the current root to the snapshot file
+- `StorageOps.restart`: reload from the snapshot file
+- `StorageOps.exportTo` and `backup`: copy snapshot bytes to another path
+- `StorageOps.importFrom` and `restoreFrom`: load another snapshot, replace the in-memory root, then persist it as the current snapshot
+- `StorageOps.shutdown`: checkpoint, then transition to `Stopped`
+- `StorageOps.housekeep`: currently the same as `checkpoint`
+
+The backend is optimized for determinism and simplicity, not multi-process coordination.
+
+## Manual Versioned Snapshot Migration
+
+`NativeLocal` now writes a small snapshot envelope around the schema payload. That envelope records the root id and a stable schema fingerprint, which makes explicit upgrade paths possible across restarts and across JSON or protobuf snapshots.
+
+For incompatible schema changes, the baseline pattern remains explicit:
+
+1. load the old snapshot with the old root schema
+2. migrate the decoded value into the new root model
+3. save the migrated root back to the snapshot path
+4. boot the new `NativeLocal` layer against the migrated snapshot
+
+The repository includes a concrete todo example for that flow:
+
+- [`TodoNativeLocalVersioningApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningApp.scala)
+- [`TodoNativeLocalVersioningSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningSpec.scala)
+
+That example models the schema version as an ADT, writes `TodoRootV1`, then upgrades the snapshot to `TodoRootV2`. The v2 model removes the legacy `legacyCategory` field and adds a new `priority` field.
+
+It demonstrates two upgrade modes:
+
+- manual migration through an explicit snapshot rewrite helper
+- automatic startup migration through a `NativeLocalSnapshotMigrationRegistry` entry backed by `DerivedMigrationPlan`
+
+`DerivedMigrationPlan` uses `zio-schema` to derive the safe structural part of the migration and still expects explicit defaults or overrides for semantic changes such as the new `priority` field.
+
+## Optional STM Adapter
+
+If you want STM composition over the same NativeLocal root, use the additive [`NativeLocalSTM.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/NativeLocalSTM.scala) service through `NativeLocal.liveWithSTM(...)`.
+
+The adapter commits STM updates into the shared root state and keeps `ObjectStore` and `StorageOps` semantics intact. It is intended as a stretch tool for local workflows, not as a replacement for the core backend contracts.
+
+## Testkit Support
+
+For specs, the repository exposes scoped temporary NativeLocal layers through [`NativeLocalObjectStore.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/NativeLocalObjectStore.scala):
+
+- `tempLayer(...)` for `ObjectStore[Root] & StorageOps[Root]`
+- `tempLayerWithSTM(...)` for `ObjectStore[Root] & StorageOps[Root] & NativeLocalSTM[Root]`
+
+These helpers create and clean up a temporary snapshot directory automatically, which makes them suitable for property-style parity suites and restart tests.
+
+Examples:
+
+- [`TestkitSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/TestkitSpec.scala)
+- [`NativeLocalSTMSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/NativeLocalSTMSpec.scala)
+
+## Example
+
+The smallest runnable examples are the todo apps:
+
+- [`TodoNativeLocalApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalApp.scala)
+- [`TodoNativeLocalVersioningApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningApp.scala)
+- [`TodoNativeLocalProtobufApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalApp.scala)
+- [`TodoNativeLocalAppSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalAppSpec.scala)
+- [`TodoNativeLocalVersioningSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningSpec.scala)
+
+Run it with:
+
+```bash
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalApp"
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalVersioningApp"
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalProtobufApp"
+```
+
+Those samples demonstrate:
+
+- immutable root updates via `ObjectStore.modify`
+- explicit `checkpoint` plus `restart`
+- JSON or protobuf snapshot files on disk
+- backend selection through `BackendConfig.NativeLocal`
+
+## Choosing NativeLocal
+
+Use `NativeLocal` when you want:
+
+- a lightweight local-first store for a small app or utility
+- schema-driven persistence without EclipseStore runtime configuration
+- one-file snapshot export and restore semantics
+
+If the root is an immutable `Map`, you can also layer the additive [`LocalRepo.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/LocalRepo.scala) helpers on top of `ObjectStore` for basic CRUD without introducing a domain-specific repository immediately.
+
+Use the EclipseStore-backed targets when you need:
+
+- larger mutable object graphs
+- richer storage-target configuration
+- existing EclipseStore operational behavior

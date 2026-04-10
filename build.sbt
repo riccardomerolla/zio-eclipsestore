@@ -4,6 +4,7 @@ ThisBuild / organizationName := "Riccardo Merolla"
 ThisBuild / organizationHomepage := Some(url("https://github.com/riccardomerolla"))
 
 lazy val zioVersion = "2.1.24"
+lazy val zioBlocksVersion = "0.0.33"
 lazy val zioSchemaVersion = "1.8.0"
 lazy val zioJsonVersion = "0.9.0"
 lazy val zioHttpVersion = "3.8.1"
@@ -56,9 +57,13 @@ lazy val root = (project in file("."))
     libraryDependencies ++= Seq(
       "dev.zio" %% "zio" % zioVersion,
       "dev.zio" %% "zio-streams" % zioVersion,
+      "dev.zio" %% "zio-blocks-typeid" % zioBlocksVersion,
+      "dev.zio" %% "zio-blocks-context" % zioBlocksVersion,
+      "dev.zio" %% "zio-blocks-ringbuffer" % zioBlocksVersion,
       "dev.zio" %% "zio-schema" % zioSchemaVersion,
       "dev.zio" %% "zio-schema-derivation" % zioSchemaVersion,
       "dev.zio" %% "zio-schema-json" % zioSchemaVersion,
+      "dev.zio" %% "zio-schema-protobuf" % zioSchemaVersion,
       "dev.zio" %% "zio-json" % zioJsonVersion,
       "org.eclipse.store" % "storage-embedded" % eclipseStoreVersion,
       "org.eclipse.store" % "storage-embedded-configuration" % eclipseStoreVersion,
@@ -67,7 +72,7 @@ lazy val root = (project in file("."))
       "dev.zio" %% "zio-config" % zioConfigVersion,
       "dev.zio" %% "zio-config-magnolia" % zioConfigVersion,
       "dev.zio" %% "zio-config-typesafe" % zioConfigVersion,
-      "dev.zio" %% "zio-test" % zioVersion % Test,
+      "dev.zio" %% "zio-test" % zioVersion,
       "dev.zio" %% "zio-test-sbt" % zioVersion % Test
     ),
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
@@ -133,6 +138,21 @@ lazy val storageSqlite = (project in file("storage-sqlite"))
     libraryDependencies ++= Seq(
       "dev.zio" %% "zio" % zioVersion,
       "org.xerial" % "sqlite-jdbc" % "3.46.0.1",
+      "dev.zio" %% "zio-test" % zioVersion % Test,
+      "dev.zio" %% "zio-test-sbt" % zioVersion % Test
+    ),
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
+  )
+  .dependsOn(root)
+
+lazy val bench = (project in file("bench"))
+  .enablePlugins(JmhPlugin)
+  .settings(
+    name := "zio-eclipsestore-bench",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      "dev.zio" %% "zio-schema" % zioSchemaVersion,
+      "dev.zio" %% "zio-schema-derivation" % zioSchemaVersion,
       "dev.zio" %% "zio-test" % zioVersion % Test,
       "dev.zio" %% "zio-test-sbt" % zioVersion % Test
     ),

@@ -1,34 +1,34 @@
 package io.github.riccardomerolla.zio.eclipsestore.examples.bookstore
 
+import java.nio.file.Paths
+
 import zio.*
 import zio.http.Server
 
-import java.nio.file.Paths
-
-import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
+import io.github.riccardomerolla.zio.eclipsestore.config.BackendConfig
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.BookstoreRoot
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.http.BookRoutes
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.BookRepository
-import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
-import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
+import io.github.riccardomerolla.zio.eclipsestore.service.StorageBackend
 
 object BookstoreServer extends ZIOAppDefault:
 
   private val serverLayer: ZLayer[Any, Nothing, Server] =
     Server.defaultWithPort(8080).orDie
 
+  private val defaultBackendConfig: BackendConfig =
+    BackendConfig.FileSystem(Paths.get("bookstore-data"))
+
   private val repositoryLayer: ZLayer[Any, Nothing, BookRepository] =
-    (
-      ZLayer.succeed(
-        EclipseStoreConfig(
-          storageTarget = StorageTarget.FileSystem(Paths.get("bookstore-data")),
-          rootDescriptors = Chunk.single(BookstoreRoot.descriptor),
+    ZLayer.succeed(defaultBackendConfig) >>>
+      StorageBackend
+        .rootServices(
+          BookstoreRoot.descriptor,
+          _.copy(rootDescriptors = Chunk.single(BookstoreRoot.descriptor)),
         )
-      ) >>>
-        EclipseStoreService.live.mapError(err => new RuntimeException(err.toString)).orDie >>>
-        TypedStore.live >>>
-        BookRepository.live
-    )
+        .mapError(err => new RuntimeException(err.toString))
+        .orDie >>>
+      BookRepository.live
 
   override def run: URIO[ZIOAppArgs & Scope, Any] =
     Server

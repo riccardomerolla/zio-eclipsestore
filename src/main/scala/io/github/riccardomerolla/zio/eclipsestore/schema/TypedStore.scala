@@ -140,9 +140,7 @@ object TypedStore:
   def handlersFor[K: Schema: ClassTag, V: Schema: ClassTag]
     : ZLayer[EclipseStoreConfig, Nothing, EclipseStoreConfig] =
     ZLayer.fromFunction { (config: EclipseStoreConfig) =>
-      val keyHandlers   = SchemaBinaryCodec.handlers(Schema[K])
-      val valueHandlers = SchemaBinaryCodec.handlers(Schema[V])
-      config.copy(customTypeHandlers = config.customTypeHandlers ++ keyHandlers ++ valueHandlers)
+      SchemaSerializer.registerInConfig[V](SchemaSerializer.registerInConfig[K](config))
     }
 
   def store[K: Schema, V: Schema](key: K, value: V): ZIO[TypedStore, EclipseStoreError, Unit] =

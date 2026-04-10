@@ -289,6 +289,14 @@ sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.Tod
 
 That sample now demonstrates envelope-backed snapshots plus automatic v1-to-v2 upgrade on startup for a versioned todo model.
 
+For an event-sourced NativeLocal sample that keeps an append-only journal plus a derived snapshot in the same root, run:
+
+```bash
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalEventSourcingApp"
+```
+
+That sample maps the "pure decision + effectful persistence boundary" model onto NativeLocal by replaying journal entries into a projected todo snapshot and checkpointing after every accepted command.
+
 For setup, HOCON loading, and snapshot semantics, see [`docs/native-local-guide.md`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
 
 For tests, the NativeLocal testkit also exposes scoped temp layers through [`NativeLocalObjectStore.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/NativeLocalObjectStore.scala), including an STM-enabled variant.

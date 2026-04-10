@@ -93,6 +93,23 @@ See:
 - [`TodoNativeLocalVersioningApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningApp.scala)
 - [`TodoNativeLocalVersioningSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningSpec.scala)
 
+## NativeLocal Todo Event Sourcing
+
+The event-sourcing sample shows how to map a pure command handler onto NativeLocal without introducing a separate event-store backend. The root stores both a projected snapshot and an append-only journal, and the service checkpoints after each accepted command so a fresh reopen sees the same durable journal.
+
+The example demonstrates:
+
+- a pure `decide` function that returns domain events from the current projection
+- a pure `replay` function that folds journal entries back into the snapshot
+- an event-sourced root that keeps `snapshot`, `journal`, and `nextSequence` together
+- `ObjectStore.modify` as the effect boundary that atomically updates the in-memory root
+- `StorageOps.checkpoint` as the persistence step that makes accepted commands durable
+
+See:
+
+- [`TodoNativeLocalEventSourcingApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalEventSourcingApp.scala)
+- [`TodoNativeLocalEventSourcingSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalEventSourcingSpec.scala)
+
 ## Semantic Search
 
 The vector-search sample uses `GigaMap` with a vector index and a secondary scalar index.
@@ -136,4 +153,5 @@ The executable checks for these examples live in:
 
 - [`BookstoreWorkflowSpec.scala`](../examples/bookstore/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/bookstore/BookstoreWorkflowSpec.scala)
 - [`TodoNativeLocalAppSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalAppSpec.scala)
+- [`TodoNativeLocalEventSourcingSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalEventSourcingSpec.scala)
 - [`SemanticSearchAppSpec.scala`](../examples/gigamap-cli/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/gigamap/SemanticSearchAppSpec.scala)

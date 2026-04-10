@@ -68,17 +68,17 @@ object AdvancedIndexingSpec extends ZIOSpecDefault:
       test("nearest-neighbor queries return top results with expected similarity bounds") {
         runWithLayer {
           for
-          _       <- seed
-          results <- withMap(
-                       _.query(
-                         GigaMapQuery.VectorSearch(
-                           indexName = "embedding",
-                           vector = Chunk(1.0f, 0.0f, 0.0f),
-                           limit = 2,
-                           minScore = Some(0.8f),
+            _       <- seed
+            results <- withMap(
+                         _.query(
+                           GigaMapQuery.VectorSearch(
+                             indexName = "embedding",
+                             vector = Chunk(1.0f, 0.0f, 0.0f),
+                             limit = 2,
+                             minScore = Some(0.8f),
+                           )
                          )
                        )
-                     )
           yield assertTrue(
             results.length == 2,
             results.headOption.exists(_.value.id == "rome-a"),
@@ -90,32 +90,32 @@ object AdvancedIndexingSpec extends ZIOSpecDefault:
       test("radius queries return only entities inside the geographic filter") {
         runWithLayer {
           for
-          _       <- seed
-          results <- withMap(_.query(GigaMapQuery.SpatialRadius("location", romeCenter, radiusKilometers = 5.0)))
+            _       <- seed
+            results <- withMap(_.query(GigaMapQuery.SpatialRadius("location", romeCenter, radiusKilometers = 5.0)))
           yield assertTrue(results.map(_.id).toSet == Set("rome-a", "rome-b"))
         }
       },
       test("composite queries intersect bitmap, vector, and spatial predicates") {
         runWithLayer {
           for
-          _       <- seed
-          results <- withMap(
-                       _.query(
-                         GigaMapQuery.Composite(
-                           Chunk(
-                             GigaMapPredicate.ByIndex("city", "Rome"),
-                             GigaMapPredicate.ByIndex("status", "active"),
-                             GigaMapPredicate.VectorSearch(
-                               "embedding",
-                               Chunk(1.0f, 0.0f, 0.0f),
-                               limit = 3,
-                               minScore = Some(0.9f),
-                             ),
-                             GigaMapPredicate.SpatialRadius("location", romeCenter, radiusKilometers = 5.0),
+            _       <- seed
+            results <- withMap(
+                         _.query(
+                           GigaMapQuery.Composite(
+                             Chunk(
+                               GigaMapPredicate.ByIndex("city", "Rome"),
+                               GigaMapPredicate.ByIndex("status", "active"),
+                               GigaMapPredicate.VectorSearch(
+                                 "embedding",
+                                 Chunk(1.0f, 0.0f, 0.0f),
+                                 limit = 3,
+                                 minScore = Some(0.9f),
+                               ),
+                               GigaMapPredicate.SpatialRadius("location", romeCenter, radiusKilometers = 5.0),
+                             )
                            )
                          )
                        )
-                     )
           yield assertTrue(results.map(_.id).toSet == Set("rome-a", "rome-b"))
         }
       },
@@ -130,10 +130,10 @@ object AdvancedIndexingSpec extends ZIOSpecDefault:
 
         runWithLayer {
           for
-          _      <- seed
-          before <- withMap(_.query(GigaMapQuery.VectorSearch("embedding", Chunk(1.0f, 0.0f, 0.0f), limit = 3)))
-          _      <- withMap(_.put(madrid.id, madrid))
-          after  <- withMap(_.query(GigaMapQuery.VectorSearch("embedding", Chunk(1.0f, 0.0f, 0.0f), limit = 3)))
+            _      <- seed
+            before <- withMap(_.query(GigaMapQuery.VectorSearch("embedding", Chunk(1.0f, 0.0f, 0.0f), limit = 3)))
+            _      <- withMap(_.put(madrid.id, madrid))
+            after  <- withMap(_.query(GigaMapQuery.VectorSearch("embedding", Chunk(1.0f, 0.0f, 0.0f), limit = 3)))
           yield assertTrue(
             !before.map(_.value.id).contains("madrid-a"),
             after.map(_.value.id).contains("madrid-a"),
@@ -172,7 +172,8 @@ object AdvancedIndexingSpec extends ZIOSpecDefault:
                            )
                          ).provideEnvironment(env).either
                        )
-            writer  <- ZIO.serviceWithZIO[GigaMap[String, PlaceDocument]](_.put(lisbon.id, lisbon)).provideEnvironment(env).fork
+            writer  <-
+              ZIO.serviceWithZIO[GigaMap[String, PlaceDocument]](_.put(lisbon.id, lisbon)).provideEnvironment(env).fork
             reads   <- readers
             _       <- writer.join
             results <- ZIO.serviceWithZIO[GigaMap[String, PlaceDocument]](

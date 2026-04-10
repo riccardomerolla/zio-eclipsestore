@@ -12,7 +12,7 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, ObjectStore, StorageLock }
+import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, ObjectStore, StorageLock, Transaction }
 
 object StorageLockSpec extends ZIOSpecDefault:
   given Tag[ConcurrentHashMap[String, Int]] = Tag.derived
@@ -117,10 +117,7 @@ object StorageLockSpec extends ZIOSpecDefault:
       test("interrupted fibers waiting for a lock do not leak the lock") {
         ZIO.scoped {
           for
-            path          <- ZIO.attemptBlocking(Files.createTempDirectory("storage-lock-interrupt"))
-            _             <- ZIO.addFinalizer(ZIO.attemptBlocking(deleteDirectory(path)).orDie)
-            layer          = lockLayer(path)
-            env           <- layer.build
+            env           <- memoryLockLayer.build
             releaseWriter <- Promise.make[Nothing, Unit]
             writerFiber   <- StorageLock
                                .writeLock[ConcurrentHashMap[String, Int], Unit](_ => releaseWriter.await)
@@ -132,8 +129,8 @@ object StorageLockSpec extends ZIOSpecDefault:
                                )
                                .provideEnvironment(env)
                                .fork
-            _             <- TestClock.adjust(100.millis)
-            _             <- waiter.interrupt
+            _             <- ZIO.yieldNow.repeatN(32)
+            _             <- waiter.interruptFork
             _             <- releaseWriter.succeed(())
             _             <- writerFiber.join
             _             <- StorageLock
@@ -148,7 +145,7 @@ object StorageLockSpec extends ZIOSpecDefault:
                                .provideEnvironment(env)
           yield assertTrue(finalValue == 2)
         }
-      },
+      } @@ TestAspect.timeout(5.seconds),
       test("failing writes roll the root back to its pre-mutation state") {
         ZIO.scoped {
           for
@@ -175,3 +172,38 @@ object StorageLockSpec extends ZIOSpecDefault:
         }
       },
     )
+
+  private val memoryLockLayer: ULayer[StorageLock[ConcurrentHashMap[String, Int]]] =
+    ZLayer.succeed[ObjectStore[ConcurrentHashMap[String, Int]]](FakeLockObjectStore()) >>>
+      StorageLock.live[ConcurrentHashMap[String, Int]]
+
+final private case class FakeLockObjectStore() extends ObjectStore[ConcurrentHashMap[String, Int]]:
+  override val descriptor: RootDescriptor[ConcurrentHashMap[String, Int]] =
+    RootDescriptor.concurrentMap[String, Int]("lock-root-memory")
+  private val root                                                        = new ConcurrentHashMap[String, Int]()
+
+  override def load: IO[EclipseStoreError, ConcurrentHashMap[String, Int]] =
+    ZIO.succeed(root)
+
+  override def replace(root: ConcurrentHashMap[String, Int]): IO[EclipseStoreError, Unit] =
+    ZIO.succeed {
+      this.root.clear()
+      this.root.putAll(root)
+    }
+
+  override def modify[A](
+    f: ConcurrentHashMap[String, Int] => IO[EclipseStoreError, (A, ConcurrentHashMap[String, Int])]
+  ): IO[EclipseStoreError, A] =
+    f(root).flatMap { case (result, updated) => replace(updated).as(result) }
+
+  override def storeSubgraph(subgraph: AnyRef): IO[EclipseStoreError, Unit] =
+    ZIO.unit
+
+  override def storeRoot: IO[EclipseStoreError, Unit] =
+    ZIO.unit
+
+  override def checkpoint: IO[EclipseStoreError, Unit] =
+    ZIO.unit
+
+  override def transact[A](transaction: Transaction[ConcurrentHashMap[String, Int], A]): IO[EclipseStoreError, A] =
+    transaction.run(root)

@@ -27,7 +27,11 @@ object SQLiteAdapter:
     storageName: String = "eclipsestore.db",
     connectionString: Option[String] = None,
   ): ZLayer[Any, EclipseStoreError, EclipseStoreService] =
-    ZLayer.succeed(BackendConfig.Sqlite(basePath.resolve(storageName), storageName, connectionString)) >>> StorageBackend.service()
+    ZLayer.succeed(BackendConfig.Sqlite(
+      basePath.resolve(storageName),
+      storageName,
+      connectionString,
+    )) >>> StorageBackend.service()
 
   /** Accessor layer if config already provided. */
   val service: ZLayer[EclipseStoreConfig, EclipseStoreError, EclipseStoreService] =

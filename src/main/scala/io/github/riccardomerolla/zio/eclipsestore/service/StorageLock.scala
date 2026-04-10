@@ -26,12 +26,12 @@ final case class StorageLockLive[Root](
 ) extends StorageLock[Root]:
   override def readLock[A](effect: Root => IO[EclipseStoreError, A]): IO[EclipseStoreError, A] =
     ZIO.uninterruptibleMask { restore =>
-      acquireRead.commit *> restore(store.load.flatMap(effect)).ensuring(releaseRead.commit)
+      restore(acquireRead.commit) *> restore(store.load.flatMap(effect)).ensuring(releaseRead.commit)
     }
 
   override def writeLock[A](effect: Root => IO[EclipseStoreError, A]): IO[EclipseStoreError, A] =
     ZIO.uninterruptibleMask { restore =>
-      acquireWrite.commit *>
+      restore(acquireWrite.commit) *>
         restore {
           for
             root     <- store.load
@@ -77,7 +77,7 @@ final case class StorageLockLive[Root](
     commit: (Root, A) => IO[EclipseStoreError, A],
   ): IO[EclipseStoreError, A] =
     ZIO.uninterruptibleMask { restore =>
-      acquireWrite.commit *>
+      restore(acquireWrite.commit) *>
         restore {
           for
             currentVersion <- version

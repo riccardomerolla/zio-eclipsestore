@@ -10,8 +10,8 @@ import zio.schema.{ DeriveSchema, Schema }
 import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, NativeLocalSerde }
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.schema.{ Migration, MigrationPlan }
-import io.github.riccardomerolla.zio.eclipsestore.service.{ ObjectStore, SnapshotCodec, StorageBackend, StorageOps }
+import io.github.riccardomerolla.zio.eclipsestore.schema.DerivedMigrationPlan
+import io.github.riccardomerolla.zio.eclipsestore.service.*
 
 enum TodoSchemaVersion:
   case V1
@@ -153,38 +153,53 @@ object TodoV2Service:
   def layer(
     snapshotPath: Path,
     serde: NativeLocalSerde = NativeLocalSerde.Json,
+    migrationRegistry: NativeLocalSnapshotMigrationRegistry[TodoRootV2] = NativeLocalSnapshotMigrationRegistry
+      .none[TodoRootV2],
   ): ZLayer[Any, EclipseStoreError, TodoV2Service] =
     ZLayer.make[TodoV2Service](
       ZLayer.succeed(BackendConfig.NativeLocal(snapshotPath, serde)),
-      StorageBackend.rootServices(TodoRootV2.descriptor),
+      StorageBackend.rootServices(TodoRootV2.descriptor, migrationRegistry = migrationRegistry),
       ZLayer.fromFunction(TodoV2ServiceLive.apply),
     )
 
+  def autoLayer(
+    snapshotPath: Path,
+    serde: NativeLocalSerde = NativeLocalSerde.Json,
+  ): ZLayer[Any, EclipseStoreError, TodoV2Service] =
+    layer(snapshotPath, serde, TodoVersioning.migrationRegistry)
+
 object TodoVersioning:
-  val itemV1ToV2: MigrationPlan[TodoItemV1, TodoItemV2] =
-    Migration
-      .define[TodoItemV1, TodoItemV2](
-        Migration.removeField("legacyCategory"),
-        Migration.addField("priority", Json.Str("normal")),
-      )
-      .plan
+  val itemV1ToV2: DerivedMigrationPlan[TodoItemV1, TodoItemV2] =
+    DerivedMigrationPlan.derive[TodoItemV1, TodoItemV2](
+      newFieldDefaults = Map("priority" -> Json.Str("normal"))
+    )
+
+  val migrationRegistry: NativeLocalSnapshotMigrationRegistry[TodoRootV2] =
+    NativeLocalSnapshotMigrationRegistry.single(
+      NativeLocalSnapshotMigration.fromFunction[TodoRootV1, TodoRootV2](TodoRootV1.descriptor.id) { legacy =>
+        itemV1ToV2.validate *>
+          ZIO.foreach(legacy.items)(itemV1ToV2.migrate).map(TodoRootV2.apply)
+      }
+    )
 
   def migrateSnapshot(
     snapshotPath: Path,
     serde: NativeLocalSerde = NativeLocalSerde.Json,
   ): IO[EclipseStoreError, TodoMigrationReport] =
-    val v1Codec = SnapshotCodec.forSerde[TodoRootV1](serde)
-    val v2Codec = SnapshotCodec.forSerde[TodoRootV2](serde)
-
     for
       _        <- itemV1ToV2.validate
-      existing <- SnapshotCodec.loadOrElse(snapshotPath, TodoRootV1(Chunk.empty))(using v1Codec)
-      migrated <- ZIO.foreach(existing.items)(itemV1ToV2.migrate).map(TodoRootV2.apply)
-      _        <- SnapshotCodec.save(snapshotPath, migrated)(using v2Codec)
+      existing <- SnapshotCodec.loadEnvelopedOrElse(
+                    snapshotPath,
+                    TodoRootV1.descriptor.id,
+                    serde,
+                    TodoRootV1(Chunk.empty),
+                  )
+      migrated <- ZIO.foreach(existing.value.items)(itemV1ToV2.migrate).map(TodoRootV2.apply)
+      _        <- SnapshotCodec.saveEnveloped(snapshotPath, migrated, TodoRootV2.descriptor.id, serde)
     yield TodoMigrationReport(
       from = TodoSchemaVersion.V1,
       to = TodoSchemaVersion.V2,
-      migratedTodos = existing.items.size,
+      migratedTodos = existing.value.items.size,
     )
 
 object TodoNativeLocalVersioningApp extends ZIOAppDefault:
@@ -208,11 +223,9 @@ object TodoNativeLocalVersioningApp extends ZIOAppDefault:
                       s"Loaded ${before.size} migrated todos and ${reloaded.size} total todos after adding ${added.title}"
                     )
         _        <- ZIO.logInfo(s"Snapshot file: $snapshotPath")
-      yield ()).provide(TodoV2Service.layer(snapshotPath))
+      yield ()).provide(TodoV2Service.autoLayer(snapshotPath))
 
     (for
-      _      <- seedV1
-      report <- TodoVersioning.migrateSnapshot(snapshotPath)
-      _      <- ZIO.logInfo(s"Migrated ${report.migratedTodos} todos from ${report.from} to ${report.to}")
-      _      <- continueWithV2
+      _ <- seedV1
+      _ <- continueWithV2
     yield ()).catchAll(error => ZIO.logError(error.toString))

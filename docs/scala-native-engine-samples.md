@@ -83,6 +83,8 @@ The example demonstrates:
 
 - an explicit version ADT for the snapshot model
 - a v1-to-v2 migration that removes `legacyCategory` and adds `priority`
+- an envelope-backed snapshot that records the root id and schema fingerprint
+- automatic startup migration through `NativeLocalSnapshotMigrationRegistry`
 - reopening the same NativeLocal snapshot with the v2 root after migration
 - continuing to manage both migrated and newly created todos after the upgrade
 

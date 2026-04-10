@@ -13,11 +13,15 @@ import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 final private case class NativeLocalState[Root](
   descriptor: RootDescriptor[Root],
   snapshotPath: Path,
+  serde: NativeLocalSerde,
+  migrationRegistry: NativeLocalSnapshotMigrationRegistry[Root],
   rootRef: Ref[Root],
   rootTRef: TRef[Root],
   statusRef: Ref[LifecycleStatus],
   gate: Semaphore,
-)(using val codec: SnapshotCodec[Root]
+)(using
+  val codec: SnapshotCodec[Root],
+  val schema: Schema[Root],
 ):
   def normalize(root: Root): IO[EclipseStoreError, Root] =
     ZIO
@@ -36,10 +40,19 @@ final private case class NativeLocalState[Root](
     }
 
   def snapshotCurrentUnsafe: IO[EclipseStoreError, Unit] =
-    rootRef.get.flatMap(root => SnapshotCodec.save(snapshotPath, root))
+    rootRef.get.flatMap(root => SnapshotCodec.saveEnveloped(snapshotPath, root, descriptor.id, serde))
 
   def loadSnapshot(default: => Root): IO[EclipseStoreError, Root] =
-    SnapshotCodec.loadOrElse(snapshotPath, default).flatMap(normalize)
+    loadSnapshotFrom(snapshotPath, default)
+
+  def loadSnapshotFrom(path: Path, default: => Root): IO[EclipseStoreError, Root] =
+    SnapshotCodec
+      .loadEnvelopedOrElse(path, descriptor.id, serde, default, migrationRegistry)
+      .flatMap { loaded =>
+        normalize(loaded.value).tap(root =>
+          ZIO.when(loaded.rewriteRequired)(SnapshotCodec.saveEnveloped(snapshotPath, root, descriptor.id, serde))
+        )
+      }
 
 final private case class NativeLocalObjectStore[Root](state: NativeLocalState[Root]) extends ObjectStore[Root]:
   override def descriptor: RootDescriptor[Root] =
@@ -111,7 +124,7 @@ final private case class NativeLocalStorageOps[Root](state: NativeLocalState[Roo
   override def restoreFrom(source: Path): IO[EclipseStoreError, LifecycleStatus] =
     state.gate.withPermit {
       for
-        restored <- SnapshotCodec.load(source)(using state.codec).flatMap(state.normalize)
+        restored <- state.loadSnapshotFrom(source, state.descriptor.initializer())
         _        <- state.rootRef.set(restored)
         _        <- state.rootTRef.set(restored).commit
         _        <- state.snapshotCurrentUnsafe
@@ -177,15 +190,22 @@ object NativeLocal:
     snapshotPath: Path,
     descriptor: RootDescriptor[Root],
     serde: NativeLocalSerde,
+    migrationRegistry: NativeLocalSnapshotMigrationRegistry[Root],
   ): ZLayer[Any, EclipseStoreError, ObjectStore[Root] & StorageOps[Root] & NativeLocalSTM[Root]] =
     given SnapshotCodec[Root] = SnapshotCodec.forSerde[Root](serde)
 
     ZLayer.scopedEnvironment {
       for
-        loaded    <- SnapshotCodec.loadOrElse(snapshotPath, descriptor.initializer())
+        loaded    <- SnapshotCodec.loadEnvelopedOrElse(
+                       snapshotPath,
+                       descriptor.id,
+                       serde,
+                       descriptor.initializer(),
+                       migrationRegistry,
+                     )
         initial   <- ZIO
                        .attempt {
-                         val migrated = descriptor.migrate(loaded)
+                         val migrated = descriptor.migrate(loaded.value)
                          descriptor.onLoad(migrated)
                          migrated
                        }
@@ -200,7 +220,8 @@ object NativeLocal:
         startedAt <- Clock.instant
         statusRef <- Ref.make[LifecycleStatus](LifecycleStatus.Running(startedAt))
         gate      <- Semaphore.make(1)
-        state      = NativeLocalState(descriptor, snapshotPath, rootRef, rootTRef, statusRef, gate)
+        state      = NativeLocalState(descriptor, snapshotPath, serde, migrationRegistry, rootRef, rootTRef, statusRef, gate)
+        _         <- ZIO.when(loaded.rewriteRequired)(SnapshotCodec.saveEnveloped(snapshotPath, initial, descriptor.id, serde))
         store      = NativeLocalObjectStore(state)
         ops        = NativeLocalStorageOps(state)
         stm        = NativeLocalSTMLive(state)
@@ -215,9 +236,10 @@ object NativeLocal:
     snapshotPath: Path,
     descriptor: RootDescriptor[Root],
     serde: NativeLocalSerde = NativeLocalSerde.Json,
+    migrationRegistry: NativeLocalSnapshotMigrationRegistry[Root] = NativeLocalSnapshotMigrationRegistry.none[Root],
   ): ZLayer[Any, EclipseStoreError, ObjectStore[Root] & StorageOps[Root]] =
     ZLayer.scopedEnvironment {
-      allServices(snapshotPath, descriptor, serde).build.map { env =>
+      allServices(snapshotPath, descriptor, serde, migrationRegistry).build.map { env =>
         ZEnvironment[ObjectStore[Root], StorageOps[Root]](
           env.get[ObjectStore[Root]],
           env.get[StorageOps[Root]],
@@ -229,16 +251,18 @@ object NativeLocal:
     snapshotPath: Path,
     descriptor: RootDescriptor[Root],
     serde: NativeLocalSerde = NativeLocalSerde.Json,
+    migrationRegistry: NativeLocalSnapshotMigrationRegistry[Root] = NativeLocalSnapshotMigrationRegistry.none[Root],
   ): ZLayer[Any, EclipseStoreError, ObjectStore[Root] & StorageOps[Root] & NativeLocalSTM[Root]] =
-    allServices(snapshotPath, descriptor, serde)
+    allServices(snapshotPath, descriptor, serde, migrationRegistry)
 
   def stm[Root: Tag: Schema](
     snapshotPath: Path,
     descriptor: RootDescriptor[Root],
     serde: NativeLocalSerde = NativeLocalSerde.Json,
+    migrationRegistry: NativeLocalSnapshotMigrationRegistry[Root] = NativeLocalSnapshotMigrationRegistry.none[Root],
   ): ZLayer[Any, EclipseStoreError, NativeLocalSTM[Root]] =
     ZLayer.scopedEnvironment {
-      allServices(snapshotPath, descriptor, serde).build.map { env =>
+      allServices(snapshotPath, descriptor, serde, migrationRegistry).build.map { env =>
         ZEnvironment[NativeLocalSTM[Root]](env.get[NativeLocalSTM[Root]])
       }
     }

@@ -66,6 +66,45 @@ object TodoNativeLocalVersioningSpec extends ZIOSpecDefault:
       }).mapError(err => new RuntimeException(err.toString))
     }
 
+  private def autoVersioningScenario(
+    serde: NativeLocalSerde,
+    extension: String,
+  ): ZIO[Any, Throwable, TestResult] =
+    withTempDirectory(s"todo-auto-versioning-${extension.replace(".", "")}") { dir =>
+      val snapshotPath = dir.resolve(s"todo-auto-versioned$extension")
+      val v1Layer      = TodoV1Service.layer(snapshotPath, serde)
+      val autoV2Layer  = TodoV2Service.autoLayer(snapshotPath, serde)
+      val plainV2Layer = TodoV2Service.layer(snapshotPath, serde)
+
+      (for
+        seeded   <- (for
+                      first  <- TodoV1Service.add("auto migrate first", "docs")
+                      second <- TodoV1Service.add("auto migrate second", "ops")
+                      _      <- TodoV1Service.complete(first.id)
+                      _      <- TodoV1Service.checkpoint
+                    yield (first, second)).provideLayer(v1Layer)
+        migrated <- TodoV2Service.list.provideLayer(autoV2Layer)
+        after    <- (for
+                      createdV2 <- TodoV2Service.add("post-migration todo", "high")
+                      reopened  <- TodoV2Service.checkpointAndReload
+                    yield (createdV2, reopened)).provideLayer(autoV2Layer)
+        plain    <- TodoV2Service.list.provideLayer(plainV2Layer)
+      yield {
+        val createdV2 = after._1
+        val reopened  = after._2
+
+        assertTrue(
+          migrated.size == 2,
+          migrated.exists(todo => todo.id == seeded._1.id && todo.completed && todo.priority == "normal"),
+          migrated.exists(todo => todo.id == seeded._2.id && !todo.completed && todo.priority == "normal"),
+          reopened.size == 3,
+          reopened.exists(todo => todo.id == createdV2.id && todo.priority == "high" && !todo.completed),
+          plain.size == 3,
+          plain.exists(_.id == createdV2.id),
+        )
+      }).mapError(err => new RuntimeException(err.toString))
+    }
+
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("TodoNativeLocalVersioning")(
       test("manual JSON snapshot migration upgrades v1 todos to v2 and keeps writes working") {
@@ -73,5 +112,11 @@ object TodoNativeLocalVersioningSpec extends ZIOSpecDefault:
       },
       test("manual protobuf snapshot migration upgrades v1 todos to v2 and keeps writes working") {
         versioningScenario(NativeLocalSerde.Protobuf, ".pb")
+      },
+      test("auto JSON snapshot migration upgrades v1 todos on v2 startup and rewrites the snapshot") {
+        autoVersioningScenario(NativeLocalSerde.Json, ".json")
+      },
+      test("auto protobuf snapshot migration upgrades v1 todos on v2 startup and rewrites the snapshot") {
+        autoVersioningScenario(NativeLocalSerde.Protobuf, ".pb")
       },
     )

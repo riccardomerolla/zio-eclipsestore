@@ -272,18 +272,6 @@ final case class MigrationPlan[Old, New](
         case Left(error)  =>
           ZIO.fail(EclipseStoreError.MigrationError(s"Failed to decode migrated payload: $error", None))
       }
-
-private object SchemaIntrospection:
-  def topLevelFields[A](schema: Schema[A]): Map[String, String] =
-    schema match
-      case record: Schema.Record[A] =>
-        record.fields.map(field => field.name -> stableShape(field.schema.asInstanceOf[Schema[?]])).toMap
-      case _                        =>
-        Map.empty
-
-  private def stableShape(schema: Schema[?]): String =
-    schema.ast.toString
-
 final private case class ValidationCoverage(
   createdFields: Set[String],
   consumedFields: Set[String],

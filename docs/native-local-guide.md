@@ -98,7 +98,9 @@ The backend is optimized for determinism and simplicity, not multi-process coord
 
 ## Manual Versioned Snapshot Migration
 
-`NativeLocal` does not auto-upgrade incompatible snapshot schemas yet. The current pattern is explicit:
+`NativeLocal` now writes a small snapshot envelope around the schema payload. That envelope records the root id and a stable schema fingerprint, which makes explicit upgrade paths possible across restarts and across JSON or protobuf snapshots.
+
+For incompatible schema changes, the baseline pattern remains explicit:
 
 1. load the old snapshot with the old root schema
 2. migrate the decoded value into the new root model
@@ -110,7 +112,14 @@ The repository includes a concrete todo example for that flow:
 - [`TodoNativeLocalVersioningApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningApp.scala)
 - [`TodoNativeLocalVersioningSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningSpec.scala)
 
-That example models the schema version as an ADT, writes `TodoRootV1`, then migrates the snapshot in place to `TodoRootV2` with an explicit `MigrationPlan`. The v2 model removes the legacy `legacyCategory` field and adds a new `priority` field, after which the same snapshot file can be reopened through the v2 `NativeLocal` layer.
+That example models the schema version as an ADT, writes `TodoRootV1`, then upgrades the snapshot to `TodoRootV2`. The v2 model removes the legacy `legacyCategory` field and adds a new `priority` field.
+
+It demonstrates two upgrade modes:
+
+- manual migration through an explicit snapshot rewrite helper
+- automatic startup migration through a `NativeLocalSnapshotMigrationRegistry` entry backed by `DerivedMigrationPlan`
+
+`DerivedMigrationPlan` uses `zio-schema` to derive the safe structural part of the migration and still expects explicit defaults or overrides for semantic changes such as the new `priority` field.
 
 ## Optional STM Adapter
 

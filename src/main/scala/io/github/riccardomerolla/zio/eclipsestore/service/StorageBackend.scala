@@ -47,13 +47,14 @@ object StorageBackend:
   def rootServices[Root: Tag: Schema](
     descriptor: RootDescriptor[Root],
     configure: EclipseStoreConfig => EclipseStoreConfig = identity,
+    migrationRegistry: NativeLocalSnapshotMigrationRegistry[Root] = NativeLocalSnapshotMigrationRegistry.none[Root],
   ): ZLayer[BackendConfig, EclipseStoreError, ObjectStore[Root] & StorageOps[Root]] =
     ZLayer.scopedEnvironment {
       for
         config       <- ZIO.service[BackendConfig]
         selectedLayer = config match
                           case nativeLocal: BackendConfig.NativeLocal =>
-                            NativeLocal.live(nativeLocal.snapshotPath, descriptor, nativeLocal.serde)
+                            NativeLocal.live(nativeLocal.snapshotPath, descriptor, nativeLocal.serde, migrationRegistry)
                           case other                                  =>
                             ZLayer.succeed(other) >>> service(
                               configure

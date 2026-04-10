@@ -287,6 +287,8 @@ For an explicit v1-to-v2 NativeLocal snapshot migration example, run:
 sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalVersioningApp"
 ```
 
+That sample now demonstrates envelope-backed snapshots plus automatic v1-to-v2 upgrade on startup for a versioned todo model.
+
 For setup, HOCON loading, and snapshot semantics, see [`docs/native-local-guide.md`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
 
 For tests, the NativeLocal testkit also exposes scoped temp layers through [`NativeLocalObjectStore.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/NativeLocalObjectStore.scala), including an STM-enabled variant.

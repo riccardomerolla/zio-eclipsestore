@@ -6,14 +6,25 @@ import zio.*
 import zio.stream.ZStream
 import zio.test.*
 
-import io.github.riccardomerolla.zio.eclipsestore.error.{ EclipseStoreError, PersistenceError }
+import io.github.riccardomerolla.zio.eclipsestore.error.{
+  EclipseStoreError,
+  EventStoreError,
+  OutboxError,
+  PersistenceError,
+  SnapshotStoreError,
+}
 import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
-import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LocalRepo, NativeLocalSTM }
+import io.github.riccardomerolla.zio.eclipsestore.service.*
 
 object ApiContractSpec extends ZIOSpecDefault:
 
   private val publicApiTypes = List(
     classOf[EclipseStoreService],
+    classOf[EventPublisher],
+    classOf[EventStore[?]],
+    classOf[SnapshotStore[?]],
+    classOf[OutboxRelay[?]],
+    classOf[EventSourcedRuntime[?, ?, ?, ?]],
     classOf[LocalRepo[?, ?]],
     classOf[NativeLocalSTM[?]],
     classOf[TypedStore],
@@ -70,7 +81,10 @@ object ApiContractSpec extends ZIOSpecDefault:
       },
       test("public storage error ADTs share the PersistenceError contract") {
         assertTrue(
-          classOf[PersistenceError].isAssignableFrom(classOf[EclipseStoreError])
+          classOf[PersistenceError].isAssignableFrom(classOf[EclipseStoreError]),
+          classOf[PersistenceError].isAssignableFrom(classOf[EventStoreError]),
+          classOf[PersistenceError].isAssignableFrom(classOf[SnapshotStoreError]),
+          classOf[PersistenceError].isAssignableFrom(classOf[OutboxError]),
         )
       },
     )

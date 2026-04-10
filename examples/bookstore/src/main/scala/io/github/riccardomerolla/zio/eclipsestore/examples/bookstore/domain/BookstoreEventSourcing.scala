@@ -4,7 +4,7 @@ import zio.*
 import zio.schema.Schema
 import zio.schema.derived
 
-import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
+import io.github.riccardomerolla.zio.eclipsestore.service.{ EventEnvelope, EventSourcedBehavior, StreamId }
 
 enum BookstoreCommand derives Schema:
   case Create(book: Book)
@@ -16,11 +16,6 @@ enum BookstoreEvent derives Schema:
   case BookUpdated(book: Book)
   case BookDeleted(id: BookId)
 
-final case class BookstoreEventRecord(
-  sequence: Long,
-  event: BookstoreEvent,
-) derives Schema
-
 final case class BookstoreProjection(books: Chunk[Book]) derives Schema:
   def find(id: BookId): Option[Book] =
     books.find(_.id == id)
@@ -29,45 +24,29 @@ object BookstoreProjection:
   val empty: BookstoreProjection =
     BookstoreProjection(Chunk.empty)
 
-final case class BookstoreEventRoot(
-  snapshot: BookstoreProjection,
-  journal: Chunk[BookstoreEventRecord],
-  nextSequence: Long,
-) derives Schema
-
-object BookstoreEventRoot:
-  val empty: BookstoreEventRoot =
-    BookstoreEventRoot(
-      snapshot = BookstoreProjection.empty,
-      journal = Chunk.empty,
-      nextSequence = 1L,
-    )
-
-  val descriptor: RootDescriptor[BookstoreEventRoot] =
-    RootDescriptor.fromSchema(
-      id = "bookstore-event-sourcing-root",
-      initializer = () => empty,
-    )
-
 enum BookstoreDecisionError:
   case NotFound(id: BookId)
   case InvalidInput(message: String)
-  case SnapshotDrift
 
-object BookstoreEventSourcing:
-  def replay(journal: Chunk[BookstoreEventRecord]): BookstoreProjection =
-    journal.foldLeft(BookstoreProjection.empty) { (projection, record) =>
-      evolve(projection, record.event)
+object BookstoreEventSourcing extends EventSourcedBehavior[BookstoreProjection, BookstoreCommand, BookstoreEvent, BookstoreDecisionError]:
+  val streamId: StreamId =
+    StreamId("bookstore-catalog")
+
+  override val zero: BookstoreProjection =
+    BookstoreProjection.empty
+
+  def replay(journal: Chunk[EventEnvelope[BookstoreEvent]]): BookstoreProjection =
+    journal.foldLeft(zero) { (projection, envelope) =>
+      evolve(projection, envelope.payload)
     }
 
-  def validate(root: BookstoreEventRoot): Either[BookstoreDecisionError, Unit] =
-    Either.cond(
-      replay(root.journal) == root.snapshot,
-      (),
-      BookstoreDecisionError.SnapshotDrift,
-    )
+  override def decide(
+    state: BookstoreProjection,
+    command: BookstoreCommand,
+  ): IO[BookstoreDecisionError, Chunk[BookstoreEvent]] =
+    ZIO.fromEither(decidePure(state, command))
 
-  def decide(
+  private def decidePure(
     state: BookstoreProjection,
     command: BookstoreCommand,
   ): Either[BookstoreDecisionError, Chunk[BookstoreEvent]] =
@@ -85,31 +64,6 @@ object BookstoreEventSourcing:
         state.find(id) match
           case None    => Left(BookstoreDecisionError.NotFound(id))
           case Some(_) => Right(Chunk.single(BookstoreEvent.BookDeleted(id)))
-
-  def runCommand(
-    root: BookstoreEventRoot,
-    command: BookstoreCommand,
-  ): Either[BookstoreDecisionError, (Chunk[BookstoreEventRecord], BookstoreEventRoot)] =
-    for
-      _      <- validate(root)
-      events <- decide(root.snapshot, command)
-    yield
-      val records =
-        events.zipWithIndex.map { case (event, index) =>
-          BookstoreEventRecord(root.nextSequence + index.toLong, event)
-        }
-      val nextSnapshot =
-        records.foldLeft(root.snapshot) { (projection, record) =>
-          evolve(projection, record.event)
-        }
-      (
-        records,
-        root.copy(
-          snapshot = nextSnapshot,
-          journal = root.journal ++ records,
-          nextSequence = root.nextSequence + records.size.toLong,
-        ),
-      )
 
   private def validateCreate(book: Book): Either[BookstoreDecisionError, Book] =
     for
@@ -140,7 +94,7 @@ object BookstoreEventSourcing:
   private def nonNegativePrice(value: BigDecimal): Either[BookstoreDecisionError, Unit] =
     Either.cond(value >= 0, (), BookstoreDecisionError.InvalidInput("Book price must be non-negative"))
 
-  private def evolve(
+  override def evolve(
     projection: BookstoreProjection,
     event: BookstoreEvent,
   ): BookstoreProjection =

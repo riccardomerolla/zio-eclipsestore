@@ -26,8 +26,8 @@ object TodoNativeLocalEventSourcingSpec extends ZIOSpecDefault:
     suite("TodoNativeLocalEventSourcing")(
       test("accepted commands append journal entries and keep the snapshot aligned with replay") {
         withTempDirectory("todo-native-local-event-sourcing") { dir =>
-          val snapshotPath = dir.resolve("todo-event-sourcing.snapshot.json")
-          val layer        = TodoEventSourcedService.layer(snapshotPath)
+          val baseDir = dir.resolve("todo-eventing")
+          val layer   = TodoEventSourcedService.layer(baseDir)
 
           (for
             first    <- TodoEventSourcedService.add("map the article", "high")
@@ -37,7 +37,7 @@ object TodoNativeLocalEventSourcingSpec extends ZIOSpecDefault:
             snapshot <- TodoEventSourcedService.currentState
             replayed <- TodoEventSourcedService.replayedState
           yield assertTrue(
-            journal.map(_.sequence) == Chunk(1L, 2L, 3L),
+            journal.map(_.revision.value) == Chunk(1L, 2L, 3L),
             snapshot == replayed,
             snapshot.items.size == 2,
             snapshot.items.exists(todo => todo.id == first.id && todo.completed),
@@ -47,9 +47,9 @@ object TodoNativeLocalEventSourcingSpec extends ZIOSpecDefault:
       },
       test("rejected commands keep the persisted journal and snapshot unchanged") {
         withTempDirectory("todo-native-local-event-sourcing-failure") { dir =>
-          val snapshotPath = dir.resolve("todo-event-sourcing.snapshot.json")
-          val layer        = TodoEventSourcedService.layer(snapshotPath)
-          val missingId    = TodoId(UUID.randomUUID())
+          val baseDir   = dir.resolve("todo-eventing")
+          val layer     = TodoEventSourcedService.layer(baseDir)
+          val missingId = TodoId(UUID.randomUUID())
 
           (for
             created       <- TodoEventSourcedService.add("persist one todo", "low")
@@ -68,10 +68,12 @@ object TodoNativeLocalEventSourcingSpec extends ZIOSpecDefault:
           )).provideLayer(layer).mapError(err => new RuntimeException(err.toString))
         }
       },
-      test("each accepted command is durable across a fresh reopen because the service checkpoints after processing") {
+      test(
+        "each accepted command is durable across a fresh reopen because the journal append is the durability boundary"
+      ) {
         withTempDirectory("todo-native-local-event-sourcing-reopen") { dir =>
-          val snapshotPath = dir.resolve("todo-event-sourcing.snapshot.json")
-          val layer        = TodoEventSourcedService.layer(snapshotPath)
+          val baseDir = dir.resolve("todo-eventing")
+          val layer   = TodoEventSourcedService.layer(baseDir)
 
           (for
             first       <- (for
@@ -81,17 +83,19 @@ object TodoNativeLocalEventSourcingSpec extends ZIOSpecDefault:
             afterReopen <- TodoEventSourcedService.currentState.provideLayer(layer.fresh)
             journal     <- TodoEventSourcedService.journal.provideLayer(layer.fresh)
             replayed    <- TodoEventSourcedService.replayedState.provideLayer(layer.fresh)
+            snapshot    <- TodoEventSourcedService.latestSnapshot.provideLayer(layer.fresh)
           yield assertTrue(
             afterReopen == replayed,
             journal.size == 2,
+            snapshot.isEmpty,
             afterReopen.items.exists(todo => todo.id == first.id && todo.completed),
           )).mapError(err => new RuntimeException(err.toString))
         }
       },
-      test("protobuf snapshots support the same event-sourced reopen flow") {
+      test("protobuf eventing supports the same event-sourced reopen flow") {
         withTempDirectory("todo-native-local-event-sourcing-protobuf") { dir =>
-          val snapshotPath = dir.resolve("todo-event-sourcing.snapshot.pb")
-          val layer        = TodoEventSourcedService.layer(snapshotPath, NativeLocalSerde.Protobuf)
+          val baseDir = dir.resolve("todo-eventing")
+          val layer   = TodoEventSourcedService.layer(baseDir, NativeLocalSerde.Protobuf)
 
           (for
             _           <- TodoEventSourcedService.add("persist protobuf journal", "high").provideLayer(layer)
@@ -100,7 +104,7 @@ object TodoNativeLocalEventSourcingSpec extends ZIOSpecDefault:
           yield assertTrue(
             afterReopen.items.map(_.title) == Chunk("persist protobuf journal"),
             journal.size == 1,
-            journal.map(_.sequence) == Chunk(1L),
+            journal.map(_.revision.value) == Chunk(1L),
           )).mapError(err => new RuntimeException(err.toString))
         }
       },

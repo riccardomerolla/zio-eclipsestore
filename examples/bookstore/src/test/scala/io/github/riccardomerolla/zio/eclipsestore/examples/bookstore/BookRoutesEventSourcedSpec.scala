@@ -9,11 +9,11 @@ import zio.http.*
 import zio.json.*
 import zio.test.*
 
-import io.github.riccardomerolla.zio.eclipsestore.config.BackendConfig
+import io.github.riccardomerolla.zio.eclipsestore.config.NativeLocalEventingConfig
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.*
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.http.BookRoutes
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.BookRepository
-import io.github.riccardomerolla.zio.eclipsestore.service.StorageBackend
+import io.github.riccardomerolla.zio.eclipsestore.service.{ EventSourcedRuntimeLive, NativeLocalEventStore, NativeLocalSnapshotStore, SnapshotPolicy }
 
 object BookRoutesEventSourcedSpec extends ZIOSpecDefault:
 
@@ -29,13 +29,17 @@ object BookRoutesEventSourcedSpec extends ZIOSpecDefault:
       }.flatMap(use)
     }
 
-  private def repoLayer(snapshotPath: Path): ULayer[BookRepository] =
-    ZLayer.succeed(BackendConfig.NativeLocal(snapshotPath)) >>>
-      StorageBackend
-        .rootServices(BookstoreEventRoot.descriptor)
-        .mapError(err => new RuntimeException(err.toString))
-        .orDie >>>
-      BookRepository.eventSourcedLive
+  private def repoLayer(baseDir: Path): ULayer[BookRepository] =
+    val config = NativeLocalEventingConfig(baseDir)
+    ZLayer.make[BookRepository](
+      NativeLocalEventStore.live[BookstoreEvent](config),
+      NativeLocalSnapshotStore.live[BookstoreProjection](config),
+      EventSourcedRuntimeLive.layer(
+        BookstoreEventSourcing,
+        SnapshotPolicy.everyNEvents[BookstoreProjection, BookstoreEvent](100),
+      ),
+      BookRepository.eventSourcedLive,
+    )
 
   private val routes = BookRoutes.routes
 
@@ -49,17 +53,17 @@ object BookRoutesEventSourcedSpec extends ZIOSpecDefault:
     suite("BookRoutesEventSourced")(
       test("creates and lists books via the event-sourced NativeLocal repository") {
         withTempDirectory("book-routes-event-sourced") { dir =>
-          val snapshotPath = dir.resolve("bookstore-events.snapshot.json")
-          val payload      = CreateBookRequest("HTTP NativeLocal", "Author", BigDecimal(25)).toJson
+          val baseDir = dir.resolve("bookstore-eventing")
+          val payload = CreateBookRequest("HTTP NativeLocal", "Author", BigDecimal(25)).toJson
 
           (for
             createResponse <- run(Request.post("/books", Body.fromString(payload))).provide(
                                 Scope.default,
-                                repoLayer(snapshotPath),
+                                repoLayer(baseDir),
                               )
             listResponse   <- run(Request.get("/books")).provide(
                                 Scope.default,
-                                repoLayer(snapshotPath).fresh,
+                                repoLayer(baseDir).fresh,
                               )
             body           <- bodyText(listResponse)
             books          <- ZIO.fromEither(body.fromJson[List[Book]].left.map(JsonDecodeError.apply))
@@ -71,12 +75,12 @@ object BookRoutesEventSourcedSpec extends ZIOSpecDefault:
       },
       test("returns 404 for a missing book via the event-sourced repository") {
         withTempDirectory("book-routes-event-sourced-404") { dir =>
-          val snapshotPath = dir.resolve("bookstore-events.snapshot.json")
+          val baseDir = dir.resolve("bookstore-eventing")
 
           run(Request.get("/books/00000000-0000-0000-0000-000000000000"))
             .provide(
               Scope.default,
-              repoLayer(snapshotPath),
+              repoLayer(baseDir),
             )
             .map(response => assertTrue(response.status == Status.NotFound))
         }

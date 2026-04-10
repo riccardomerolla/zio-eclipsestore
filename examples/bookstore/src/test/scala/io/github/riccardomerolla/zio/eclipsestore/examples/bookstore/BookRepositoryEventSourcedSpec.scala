@@ -7,10 +7,10 @@ import scala.jdk.CollectionConverters.*
 import zio.*
 import zio.test.*
 
-import io.github.riccardomerolla.zio.eclipsestore.config.BackendConfig
+import io.github.riccardomerolla.zio.eclipsestore.config.NativeLocalEventingConfig
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.*
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.{ BookRepository, BookRepositoryError }
-import io.github.riccardomerolla.zio.eclipsestore.service.StorageBackend
+import io.github.riccardomerolla.zio.eclipsestore.service.{ EventSourcedRuntimeLive, NativeLocalEventStore, NativeLocalSnapshotStore, SnapshotPolicy }
 
 object BookRepositoryEventSourcedSpec extends ZIOSpecDefault:
 
@@ -24,20 +24,24 @@ object BookRepositoryEventSourcedSpec extends ZIOSpecDefault:
       }.flatMap(use)
     }
 
-  private def repoLayer(snapshotPath: Path): ZLayer[Any, Nothing, BookRepository] =
-    ZLayer.succeed(BackendConfig.NativeLocal(snapshotPath)) >>>
-      StorageBackend
-        .rootServices(BookstoreEventRoot.descriptor)
-        .mapError(err => new RuntimeException(err.toString))
-        .orDie >>>
-      BookRepository.eventSourcedLive
+  private def repoLayer(baseDir: Path): ZLayer[Any, Nothing, BookRepository] =
+    val config = NativeLocalEventingConfig(baseDir)
+    ZLayer.make[BookRepository](
+      NativeLocalEventStore.live[BookstoreEvent](config),
+      NativeLocalSnapshotStore.live[BookstoreProjection](config),
+      EventSourcedRuntimeLive.layer(
+        BookstoreEventSourcing,
+        SnapshotPolicy.everyNEvents[BookstoreProjection, BookstoreEvent](100),
+      ),
+      BookRepository.eventSourcedLive,
+    )
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("BookRepositoryEventSourced")(
       test("creates, updates, and reloads books from the NativeLocal journal-backed root") {
         withTempDirectory("bookstore-event-sourced-repo") { dir =>
-          val snapshotPath = dir.resolve("bookstore-events.snapshot.json")
-          val layer        = repoLayer(snapshotPath)
+          val baseDir = dir.resolve("bookstore-eventing")
+          val layer   = repoLayer(baseDir)
 
           (for
             created <- (for
@@ -66,11 +70,11 @@ object BookRepositoryEventSourcedSpec extends ZIOSpecDefault:
       },
       test("rejects invalid commands and preserves domain-specific errors") {
         withTempDirectory("bookstore-event-sourced-errors") { dir =>
-          val snapshotPath = dir.resolve("bookstore-events.snapshot.json")
+          val baseDir = dir.resolve("bookstore-eventing")
 
           BookRepository
             .create(CreateBookRequest("  ", "Author", BigDecimal(10)))
-            .provideLayer(repoLayer(snapshotPath))
+            .provideLayer(repoLayer(baseDir))
             .either
             .map(result =>
               assertTrue(
@@ -81,8 +85,8 @@ object BookRepositoryEventSourcedSpec extends ZIOSpecDefault:
       },
       test("deletes books durably across a fresh reopen") {
         withTempDirectory("bookstore-event-sourced-delete") { dir =>
-          val snapshotPath = dir.resolve("bookstore-events.snapshot.json")
-          val layer        = repoLayer(snapshotPath)
+          val baseDir = dir.resolve("bookstore-eventing")
+          val layer   = repoLayer(baseDir)
 
           (for
             created <- BookRepository.create(CreateBookRequest("Transient Book", "Author", BigDecimal(10))).provideLayer(layer)

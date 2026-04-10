@@ -5,23 +5,26 @@ import java.nio.file.Paths
 import zio.*
 import zio.http.Server
 
-import io.github.riccardomerolla.zio.eclipsestore.config.BackendConfig
-import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.BookstoreEventRoot
+import io.github.riccardomerolla.zio.eclipsestore.config.NativeLocalEventingConfig
+import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.{ BookstoreEvent, BookstoreEventSourcing, BookstoreProjection }
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.http.BookRoutes
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.service.BookRepository
-import io.github.riccardomerolla.zio.eclipsestore.service.StorageBackend
+import io.github.riccardomerolla.zio.eclipsestore.service.{ EventSourcedRuntimeLive, NativeLocalEventStore, NativeLocalSnapshotStore, SnapshotPolicy }
 
 object BookstoreEventSourcingServer:
-  val defaultBackendConfig: BackendConfig =
-    BackendConfig.NativeLocal(Paths.get("bookstore-event-sourcing.snapshot.json"))
+  val defaultEventingConfig: NativeLocalEventingConfig =
+    NativeLocalEventingConfig(Paths.get("bookstore-eventing"))
 
   val repositoryLayer: ZLayer[Any, Nothing, BookRepository] =
-    ZLayer.succeed(defaultBackendConfig) >>>
-      StorageBackend
-        .rootServices(BookstoreEventRoot.descriptor)
-        .mapError(err => new RuntimeException(err.toString))
-        .orDie >>>
-      BookRepository.eventSourcedLive
+    ZLayer.make[BookRepository](
+      NativeLocalEventStore.live[BookstoreEvent](defaultEventingConfig),
+      NativeLocalSnapshotStore.live[BookstoreProjection](defaultEventingConfig),
+      EventSourcedRuntimeLive.layer(
+        BookstoreEventSourcing,
+        SnapshotPolicy.everyNEvents[BookstoreProjection, BookstoreEvent](100),
+      ),
+      BookRepository.eventSourcedLive,
+    )
 
 object BookstoreEventSourcingServerApp extends ZIOAppDefault:
   private val serverLayer: ZLayer[Any, Nothing, Server] =

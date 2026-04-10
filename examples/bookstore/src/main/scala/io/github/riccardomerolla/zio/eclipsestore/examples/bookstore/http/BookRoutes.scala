@@ -34,6 +34,8 @@ object BookRoutes:
         textResponse(Status.NotFound, s"Book ${id.value} not found")
       case BookRepositoryError.InvalidInput(message)   =>
         textResponse(Status.BadRequest, message)
+      case BookRepositoryError.ConcurrentModification(message) =>
+        textResponse(Status.Conflict, message)
       case BookRepositoryError.StorageFailure(message) =>
         textResponse(Status.InternalServerError, message)
 

@@ -75,6 +75,22 @@ The sample demonstrates:
 
 For configuration loading and snapshot lifecycle details, see the [`NativeLocal Guide`](native-local-guide.md).
 
+## NativeLocal Todo Versioning
+
+The versioning sample shows the current manual migration path for incompatible NativeLocal schema changes. It writes `TodoRootV1`, migrates the saved snapshot to `TodoRootV2`, and then continues with the upgraded model on the same snapshot path.
+
+The example demonstrates:
+
+- an explicit version ADT for the snapshot model
+- a v1-to-v2 migration that removes `legacyCategory` and adds `priority`
+- reopening the same NativeLocal snapshot with the v2 root after migration
+- continuing to manage both migrated and newly created todos after the upgrade
+
+See:
+
+- [`TodoNativeLocalVersioningApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningApp.scala)
+- [`TodoNativeLocalVersioningSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningSpec.scala)
+
 ## Semantic Search
 
 The vector-search sample uses `GigaMap` with a vector index and a secondary scalar index.

@@ -96,6 +96,22 @@ Current behavior:
 
 The backend is optimized for determinism and simplicity, not multi-process coordination.
 
+## Manual Versioned Snapshot Migration
+
+`NativeLocal` does not auto-upgrade incompatible snapshot schemas yet. The current pattern is explicit:
+
+1. load the old snapshot with the old root schema
+2. migrate the decoded value into the new root model
+3. save the migrated root back to the snapshot path
+4. boot the new `NativeLocal` layer against the migrated snapshot
+
+The repository includes a concrete todo example for that flow:
+
+- [`TodoNativeLocalVersioningApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningApp.scala)
+- [`TodoNativeLocalVersioningSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningSpec.scala)
+
+That example models the schema version as an ADT, writes `TodoRootV1`, then migrates the snapshot in place to `TodoRootV2` with an explicit `MigrationPlan`. The v2 model removes the legacy `legacyCategory` field and adds a new `priority` field, after which the same snapshot file can be reopened through the v2 `NativeLocal` layer.
+
 ## Optional STM Adapter
 
 If you want STM composition over the same NativeLocal root, use the additive [`NativeLocalSTM.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/NativeLocalSTM.scala) service through `NativeLocal.liveWithSTM(...)`.
@@ -121,13 +137,16 @@ Examples:
 The smallest runnable examples are the todo apps:
 
 - [`TodoNativeLocalApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalApp.scala)
+- [`TodoNativeLocalVersioningApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningApp.scala)
 - [`TodoNativeLocalProtobufApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalApp.scala)
 - [`TodoNativeLocalAppSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalAppSpec.scala)
+- [`TodoNativeLocalVersioningSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalVersioningSpec.scala)
 
 Run it with:
 
 ```bash
 sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalApp"
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalVersioningApp"
 sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalProtobufApp"
 ```
 

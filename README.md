@@ -281,6 +281,12 @@ If you want protobuf snapshots instead of JSON, run the protobuf variant:
 sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalProtobufApp"
 ```
 
+For an explicit v1-to-v2 NativeLocal snapshot migration example, run:
+
+```bash
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalVersioningApp"
+```
+
 For setup, HOCON loading, and snapshot semantics, see [`docs/native-local-guide.md`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
 
 For tests, the NativeLocal testkit also exposes scoped temp layers through [`NativeLocalObjectStore.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/NativeLocalObjectStore.scala), including an STM-enabled variant.

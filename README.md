@@ -1,16 +1,16 @@
 # zio-eclipsestore
 
-Type-safe persistence for Scala 3 + ZIO on top of EclipseStore.
+Persistence for Scala 3 + ZIO that favors explicit effects, typed roots, and practical local-first workflows over ORM-style magic.
 
 ## TL;DR
 
-- Effect-first API (`ZIO` all the way)
-- Typed roots and schema-driven handler registration
-- Automatic query batching and controlled parallel execution
-- Backend abstraction for EclipseStore targets and NativeLocal snapshots
-- GigaMap module with indexes and vector similarity search (EclipseStore 4.x)
+- Built for teams that want persistence to feel like ZIO, not like hidden runtime behavior
+- Typed roots + schema-driven handler registration, so model drift is harder to miss
+- Automatic batching for batchable queries, controlled parallelism for everything else
+- One API, multiple backends: EclipseStore targets and NativeLocal snapshots
+- GigaMap support, including vector similarity search on EclipseStore 4.x
 
-If you want an opinionated, local-friendly persistence layer that still feels idiomatic in ZIO apps, this is it.
+If your default is "make effects explicit, keep architecture boring, ship fast," this library is optimized for that path.
 
 ## Install
 
@@ -51,6 +51,16 @@ object MyApp extends ZIOAppDefault:
 - Streaming read/write primitives (`ZStream`-friendly)
 - Production knobs: performance tuning, custom handlers, backup targets, import/export
 - NativeLocal mode for whole-root local-first snapshots
+
+## Why NativeLocal Exists
+
+NativeLocal is not a second-class demo backend. It is a deliberate implementation for local-first, single-process applications where simplicity and determinism matter more than distributed complexity.
+
+- Use NativeLocal when you want a whole-root snapshot model with explicit checkpoint/restart semantics
+- Use NativeLocal when you want predictable local development, fast startup, and easy test isolation
+- Use EclipseStore-backed targets when you need the full storage foundation and broader backend integration
+
+The point is choice without rewriting your service layer: keep the same root model and swap backend behavior at the edge.
 
 ## Documentation Map
 

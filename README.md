@@ -1,736 +1,98 @@
 # zio-eclipsestore
 
-A ZIO-based library for type-safe, efficient, and boilerplate-free access to [EclipseStore](https://github.com/eclipse-store/store).
+Type-safe persistence for Scala 3 + ZIO on top of EclipseStore.
 
-## Features
+## TL;DR
 
-- **Type-Safe API**: Leverage ZIO's type system for compile-time safety
-- **Automatic Query Batching**: Batchable queries are optimized automatically
-- **Parallel Execution**: Un-batchable queries execute in parallel with controlled concurrency
-- **Typed Root Instances**: Declaratively describe and access root aggregates
-- **Lifecycle Management**: Checkpoints, backups, and restarts via `LifecycleCommand`
-- **Streaming Persistence**: Stream keys/values and batch updates with `putAll`/`persistAll`
-- **GigaMap Module**: Advanced indexed maps with query DSL, CRUD, and persistence support
-  - **Vector Similarity Search** (4.x+): Semantic search via vector embeddings with cosine similarity
-  - **VectorIndexService** (4.x+): Standalone vector index with cosine/dot-product/euclidean similarity, `ZStream` results, and background persistence scheduling
-- **Resource Safety**: ZIO's resource management ensures proper cleanup
-- **Custom Type Handlers & Blobs**: Register custom binary handlers for domain types and blobs
-- **Backup Targets & Import/Export**: Built-in backup configuration (SQLite/SQL/S3/FTP), import/export helpers
-- **Performance Tuning**: Configure channels, caches, compression, off-heap page store, encryption
-- **Lazy Loading & Eager Storing**: Lazy references/collections plus eager-field semantics via examples
-- **ZIO Config Integration**: Load `EclipseStoreConfig` from HOCON/resources via zio-config
-- **Backend Selection**: Use `BackendConfig` and `StorageBackend.rootServices(...)` to switch between EclipseStore-backed engines and `NativeLocal`
-- **Effect-Oriented**: All operations are ZIO effects for composability
+- Effect-first API (`ZIO` all the way)
+- Typed roots and schema-driven handler registration
+- Automatic query batching and controlled parallel execution
+- Backend abstraction for EclipseStore targets and NativeLocal snapshots
+- GigaMap module with indexes and vector similarity search (EclipseStore 4.x)
 
-## Schema Integration
+If you want an opinionated, local-friendly persistence layer that still feels idiomatic in ZIO apps, this is it.
 
-zio-eclipsestore now supports schema-driven handler registration and a typed high-level API.
+## Install
 
-```mermaid
-flowchart LR
-  A["Domain Models (derives Schema)"] --> B["RootDescriptor.fromSchema"]
-  B --> C["EclipseStoreService.live startup"]
-  C --> D["SchemaBinaryCodec.handlers"]
-  D --> E["Auto-register BinaryTypeHandlers"]
-  E --> F["Persistence Foundation"]
-  F --> G["TypedStore (store/fetch/typedRoot)"]
-```
-
-### Manual Handlers -> Schema Migration
-
-```scala
-// Before: manual handler wiring
-final class Employee(var id: String, var salary: Double)
-val handler = org.eclipse.serializer.persistence.binary.types.Binary.TypeHandler(
-  classOf[Employee],
-  org.eclipse.serializer.persistence.binary.types.Binary.Field(
-    classOf[String],
-    "id",
-    (e: Employee) => e.id,
-    (e: Employee, v: String) => e.id = v,
-  ),
-)
-
-val before = EclipseStoreConfig(
-  storageTarget = StorageTarget.FileSystem(path),
-  customTypeHandlers = Chunk(handler),
-)
-
-// After: schema-derived handlers
-case class Employee(id: String, salary: Double) derives Schema
-
-val after = EclipseStoreConfig(
-  storageTarget = StorageTarget.FileSystem(path),
-  rootDescriptors = Chunk(
-    RootDescriptor.fromSchema("employees", () => List.empty[Employee])
-  ),
-)
-```
-
-### TypedStore API
-
-`TypedStore` gives schema-validated calls on top of `EclipseStoreService`:
-
-```scala
-for
-  _     <- TypedStore.store("book:1", book)
-  found <- TypedStore.fetch[String, Book]("book:1")
-  root  <- TypedStore.typedRoot(BookstoreRoot.descriptor)
-  _     <- TypedStore.storePersist(root)
-yield found
-```
-
-## Version Compatibility
-
-| zio-eclipsestore | EclipseStore | Scala | ZIO | Status |
-|---|---|---|---|---|
-| **2.x** (work-in-progress) | **4.0.0+** | 3.5+ | 2.1+ | IN DEVELOPMENT |
-| 1.x | 1.x | 3.3+ | 2.0+ | Stable |
-
-### Migration Guide: 1.x → 4.x
-
-**Key Changes:**
-- EclipseStore 4.0.0+ introduces native vector similarity search in GigaMap
-- New `VectorSimilarity` query type for semantic search operations
-- New `GigaMapVectorIndex` for defining vector embeddings on domain values
-
-**Breaking Changes:**
-- Build against EclipseStore 4.0.0-beta1 (or later stable 4.x)
-- GigaMapDefinition now supports optional vector indexes
-- Existing CRUD operations and regular indexes remain unchanged
-
-**Migration Steps:**
-1. Update `build.sbt` to use EclipseStore 4.x
-2. No code changes needed for existing GigaMap usage (backward compatible)
-3. To use vector search:
-   - Define a `GigaMapVectorIndex` for your value type
-   - Include it in `GigaMapDefinition.vectorIndexes`
-   - Query using `GigaMapQuery.VectorSimilarity`
-
-**Example: Vector Index Migration**
-
-```scala
-// Before (1.x) - Regular text index
-val definition = GigaMapDefinition(
-  name = "books",
-  indexes = Chunk(
-    GigaMapIndex.single("author", (book: Book) => book.author)
-  )
-)
-
-// After (4.x) - Add vector index for semantic search
-case class Book(id: String, title: String, author: String, embedding: Array[Float])
-
-val definition = GigaMapDefinition(
-  name = "books",
-  indexes = Chunk(
-    GigaMapIndex.single("author", (book: Book) => book.author)
-  ),
-  vectorIndexes = Chunk(
-    GigaMapVectorIndex("embedding", (book: Book) => book.embedding, dimension = 384)
-  )
-)
-
-// Query by vector similarity
-val queryVector = Array(0.1f, 0.5f, -0.2f, ...) // Your embedding vector
-GigaMap.query(GigaMapQuery.VectorSimilarity(
-  indexName = "embedding",
-  vector = queryVector,
-  limit = 10,
-  threshold = Some(0.7f)
-))
-```
-
-## Getting Started
-
-Add the dependency to your `build.sbt`:
+Use the latest published version for your modules.
 
 ```scala
 libraryDependencies ++= Seq(
-  "io.github.riccardomerolla" %% "zio-eclipsestore" % "1.0.5",
-  "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % "1.0.5", // Optional: for GigaMap module
-  "io.github.riccardomerolla" %% "zio-eclipsestore-storage-sqlite" % "1.0.5" // Optional: for SQLite storage/backup
+  "io.github.riccardomerolla" %% "zio-eclipsestore" % "<latest>",
+  "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % "<latest>", // optional
+  "io.github.riccardomerolla" %% "zio-eclipsestore-storage-sqlite" % "<latest>" // optional
 )
 ```
 
-Or load EclipseStore-native configuration with zio-config (HOCON/resource file):
-
-```scala
-import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfigZIO
-
-val layer =
-  EclipseStoreConfigZIO
-    .fromResourcePath // or fromFile(Paths.get("application.conf"))
-
-// application.conf example (partial)
-// eclipsestore {
-//   storageTarget {
-//     fileSystem {
-//       path = "/data/store"
-//     }
-//   }
-//   performance {
-//     channelCount = 8
-//   }
-//   backupDirectory = "/data/backup"
-// }
-```
-
-For local-first root services, load `BackendConfig` instead and let `StorageBackend.rootServices(...)` choose the engine:
-
-```scala
-import java.nio.file.Paths
-import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, EclipseStoreConfigZIO }
-import io.github.riccardomerolla.zio.eclipsestore.service.StorageBackend
-
-val backendLayer =
-  EclipseStoreConfigZIO.backendFromFile(Paths.get("application.conf"))
-
-// application.conf example (partial)
-// eclipsestore {
-//   backend {
-//     nativeLocal {
-//       snapshotPath = "./data/bookstore.snapshot.json"
-//     }
-//   }
-// }
-```
-
-### Quick Example
+## 30-Second Example
 
 ```scala
 import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
-import io.github.riccardomerolla.zio.eclipsestore.domain.{Query, RootDescriptor}
-import io.github.riccardomerolla.zio.eclipsestore.service.{EclipseStoreService, LifecycleCommand}
+import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 import zio.*
-import scala.collection.mutable.ListBuffer
 
 object MyApp extends ZIOAppDefault:
   def run =
-    val program = for
-      // Batch store values
-      _ <- EclipseStoreService.putAll(
-        List("user:1" -> "Alice", "user:2" -> "Bob", "user:3" -> "Charlie")
+    (for
+      _      <- EclipseStoreService.put("user:1", "Alice")
+      stored <- EclipseStoreService.get[String, String]("user:1")
+      _      <- ZIO.logInfo(s"User: ${stored.getOrElse("missing")}")
+    yield ())
+      .provide(
+        EclipseStoreConfig.temporaryLayer,
+        EclipseStoreService.live,
       )
-      
-      // Retrieve values
-      user <- EclipseStoreService.get[String, String]("user:1")
-      _ <- ZIO.logInfo(s"User: ${user.getOrElse("not found")}")
-      
-      // Stream all values
-      streamed <- EclipseStoreService.streamValues[String].runCollect
-      _ <- ZIO.logInfo(s"All users: ${streamed.mkString(", ")}")
-      
-      // Work with typed roots
-      favoritesDescriptor = RootDescriptor(
-        id = "favorite-users",
-        initializer = () => ListBuffer.empty[String]
-      )
-      favorites <- EclipseStoreService.root(favoritesDescriptor)
-      _ <- ZIO.succeed(favorites.addOne("user:1"))
-      _ <- EclipseStoreService.maintenance(LifecycleCommand.Checkpoint)
-      
-      // Execute multiple queries in batch
-      queries = List(
-        Query.Get[String, String]("user:1"),
-        Query.Get[String, String]("user:2"),
-        Query.Get[String, String]("user:3")
-      )
-      results <- EclipseStoreService.executeMany(queries)
-      _ <- ZIO.logInfo(s"Batch query results: ${results.mkString(", ")}")
-    yield ()
-    
-    program.provide(
-      EclipseStoreConfig.temporaryLayer,
-      EclipseStoreService.live
-    )
 ```
 
-### Reference Examples
-
-We ported the original EclipseStore “getting started” and “embedded storage basics” walkthroughs to ZIO:
-
-| Example | Main Class | Highlights |
-| --- | --- | --- |
-| Getting Started | `io.github.riccardomerolla.zio.eclipsestore.examples.gettingstarted.GettingStartedApp` | Simple put/get/batch usage |
-| Embedded Storage Basics | `io.github.riccardomerolla.zio.eclipsestore.examples.gettingstarted.EmbeddedStorageBasicsApp` | Typed roots and maintenance lifecycle |
-
-Run them with `sbt "runMain full.qualified.ClassName"`.
-
-### Benchmarks
-
-NativeLocal performance baselines live in the dedicated `bench` project and use JMH.
-
-```bash
-sbt "bench/Jmh/run .*NativeLocalBenchmark.*"
-```
-
-### NativeLocal Todo Sample
-
-For a minimal local-first sample, run the NativeLocal todo app:
-
-```bash
-sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalApp"
-```
-
-It uses a schema-derived immutable root, stores all state in one snapshot file, and demonstrates `ObjectStore.modify` plus explicit `checkpoint` and `restart`.
-
-If you want protobuf snapshots instead of JSON, run the protobuf variant:
-
-```bash
-sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalProtobufApp"
-```
-
-For an explicit v1-to-v2 NativeLocal snapshot migration example, run:
-
-```bash
-sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalVersioningApp"
-```
-
-That sample now demonstrates envelope-backed snapshots plus automatic v1-to-v2 upgrade on startup for a versioned todo model.
-
-For an event-sourced NativeLocal sample that keeps an append-only journal plus a derived snapshot in the same root, run:
-
-```bash
-sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalEventSourcingApp"
-```
-
-That sample maps the "pure decision + effectful persistence boundary" model onto NativeLocal by replaying journal entries into a projected todo snapshot and checkpointing after every accepted command.
-
-For setup, HOCON loading, and snapshot semantics, see [`docs/native-local-guide.md`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
-
-For tests, the NativeLocal testkit also exposes scoped temp layers through [`NativeLocalObjectStore.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/NativeLocalObjectStore.scala), including an STM-enabled variant.
-
-### Bookstore Backend Demo
-
-The `BookstoreServer` example reimplements the backend portion of EclipseStore’s [Bookstore demo](https://github.com/eclipse-store/bookstore-demo) using:
-
-- `zio-eclipsestore` for persistence and typed roots
-- Schema-driven handler registration via `RootDescriptor.fromSchema`
-- `BackendConfig` and `StorageBackend.rootServices(...)` for backend selection
-- `ObjectStore[BookstoreRoot]` for repository operations
-- `zio-http` for the REST API
-- `zio-json` codecs for request/response bodies
-
-Main entry point: `io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.BookstoreServer`
-
-```
-sbt bookstore/run
-```
-
-Event-sourced NativeLocal variant:
-
-```bash
-sbt "bookstore/runMain io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.BookstoreEventSourcingServerApp"
-```
-
-That variant keeps an append-only bookstore journal plus a derived catalog snapshot in a NativeLocal root, while reusing the same HTTP routes and `BookRepository` interface.
-
-Default port: `8080`. Available routes:
-
-| Method & Path | Description |
-| --- | --- |
-| `GET /books` | List all books |
-| `POST /books` | Create a book (`CreateBookRequest`) |
-| `GET /books/{id}` | Fetch a single book |
-| `PUT /books/{id}` | Update mutable fields (`UpdateBookRequest`) |
-| `DELETE /books/{id}` | Remove a book and persist the root |
-
-All write operations automatically persist the `BookstoreRoot`, and the same server wiring can run on `FileSystem` or `NativeLocal` by changing the `BackendConfig`.
-
-### Chat Models Schema Demo
-
-`io.github.riccardomerolla.zio.eclipsestore.examples.chatmodels.ChatModelsSchemaApp` demonstrates:
-
-- `ConversationEntry` with `Option[String]`, `Instant`, and enums
-- `ChatConversation` with nested `List[ConversationEntry]`
-- `AgentIssue` with multiple enums and optional fields
-- Store -> restart -> retrieve roundtrip with auto-derived handlers
-
-Run it with:
-
-```bash
-sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.chatmodels.ChatModelsSchemaApp"
-```
-
-### GigaMap Module
-
-The `gigamap` sub-project implements EclispeStore's GigaMap feature set (CRUD, indexes, predicates, and persistence) on top of ZIO:
-
-- Configure maps and indexes via `GigaMapDefinition`/`GigaMapIndex`
-- Query using predicates or index lookups (`GigaMapQuery`)
-- **Vector Similarity Search** (4.x+): Semantic search via `GigaMapVectorIndex` and `GigaMapQuery.VectorSimilarity`
-- **VectorIndexService** (4.x+): Standalone vector index service with multiple similarity functions, streaming, and background persistence
-- Persist and reload through `EclipseStoreService`
-
-**Vector Similarity Search Example:**
-
-```scala
-import io.github.riccardomerolla.zio.eclipsestore.gigamap.config.{GigaMapDefinition, GigaMapVectorIndex}
-import io.github.riccardomerolla.zio.eclipsestore.gigamap.domain.GigaMapQuery
-import zio.Chunk
-
-// Define a vector index on your value type
-val definition = GigaMapDefinition(
-  name = "documents",
-  vectorIndexes = Chunk(
-    GigaMapVectorIndex("text-embedding", (doc: Document) => doc.embedding, dimension = 384)
-  )
-)
-
-// Perform vector similarity search
-val queryEmbedding: Array[Float] = /* your query vector */
-GigaMap.query(GigaMapQuery.VectorSimilarity(
-  indexName = "text-embedding",
-  vector = queryEmbedding,
-  limit = 5,  // Return top 5 results
-  threshold = Some(0.85f)  // Minimum similarity score
-))
-```
-
-```
-sbt gigamap/test
-```
-
-You can create a map layer via `GigaMap.make(definition)` and inject it in your ZIO apps.
-
-#### VectorIndexService — Standalone Vector Search (4.x+)
-
-For more advanced use cases (multiple similarity functions, streaming results, background persistence, explicit lifecycle), use the standalone `VectorIndexService`:
-
-```scala
-import io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.*
-import zio.*
-import zio.stream.*
-
-case class Product(id: Long, name: String, embedding: Chunk[Float])
-
-object ProductVectorizer extends Vectorizer[Product]:
-  def vectorize(p: Product): Chunk[Float] = p.embedding
-  def isEmbedded: Boolean = true
-
-val config = VectorIndexConfig(
-  dimension = 768,
-  similarityFunction = SimilarityFunction.Cosine,
-  maxDegree = 32,
-  beamWidth = 200,
-  persistenceIntervalMs = Some(30_000L), // flush every 30 seconds
-)
-
-val program: ZIO[VectorIndexService, VectorError, Unit] =
-  for
-    idx     <- VectorIndexService.createIndex[Product](
-                 "products", "similarity", config, ProductVectorizer
-               )
-    _       <- idx.add(1L, Product(1L, "Laptop", laptopEmbedding))
-    _       <- idx.add(2L, Product(2L, "Monitor", monitorEmbedding))
-    results <- VectorIndexService.search[Product](
-                 "similarity", queryEmbedding, k = 5
-               )
-    _       <- ZIO.foreach(results) { r =>
-                 Console.printLine(s"${r.entity.name} (score: ${r.score})")
-               }
-  yield ()
-
-program.provide(VectorIndexService.live)
-```
-
-**Similarity function guide:**
-
-| Function | Best for | Score range |
-|---|---|---|
-| `Cosine` | Text / semantic embeddings (OpenAI, Sentence-Transformers) | [–1, 1] |
-| `DotProduct` | Pre-normalised (unit-length) embeddings — same result as cosine but faster | (–∞, +∞) |
-| `Euclidean` | Geometry-based models where spatial distance is meaningful | (–∞, 0] |
-
-**Streaming results:**
-
-```scala
-VectorIndexService
-  .searchStream[Product]("similarity", queryEmbedding, k = 100)
-  .mapZIO(r => Console.printLine(s"${r.entity.name}: ${r.score}"))
-  .runDrain
-```
-
-#### GigaMap Bookstore REPL (zio-cli)
-
-The `gigamapCli` project ports EclipseStore’s bookstore REPL using `zio-cli` 0.7.4. It now supports an interactive shell with built-in help.
-
-Interactive usage:
-
-```
-sbt gigamapCli/run
-gigamap> insert 1;Example Title;Author0,Author1;2024
-gigamap> list
-gigamap> help
-gigamap> exit
-```
-
-You can still invoke a single command directly:
-
-```
-sbt "gigamapCli/run findByAuthor Author0"
-```
-
-Supported commands:
-
-| Command | Description |
-| --- | --- |
-| `insert <id;title;author1,author2;year>` | Adds a book |
-| `list` | Shows all books |
-| `findByTitle <title>` | Searches by title |
-| `findByAuthor <author>` | Searches by author |
-| `delete <id>` | Removes a book |
-| `count` | Displays total number of books |
-| `help` | Prints the help banner |
-| `exit`/`quit` | Leaves the REPL |
-
-### Configuration
-
-Configure your EclipseStore instance:
-
-```scala
-import java.nio.file.Paths
-import io.github.riccardomerolla.zio.eclipsestore.config.{EclipseStoreConfig, StoragePerformanceConfig, StorageTarget}
-
-// Use a specific storage target and tweak performance options
-val config = EclipseStoreConfig(
-  storageTarget = StorageTarget.FileSystem(Paths.get("/data/mystore")),
-  performance = StoragePerformanceConfig(
-    channelCount = 8,
-    useOffHeapPageStore = true
-  )
-)
-
-// Or use temporary in-memory storage for testing
-val tempConfig = EclipseStoreConfig.temporary
-```
-
-### SQLite Storage
-
-To use SQLite as the storage backend, add the `zio-eclipsestore-storage-sqlite` dependency and use `SQLiteAdapter` or `StorageTarget.Sqlite`:
-
-```scala
-import io.github.riccardomerolla.zio.eclipsestore.sqlite.SQLiteAdapter
-import java.nio.file.Paths
-
-// Create a layer directly
-val sqliteLayer = SQLiteAdapter.live(
-  basePath = Paths.get("./data"),
-  storageName = "my-store.db"
-)
-
-// Or via config
-val config = SQLiteAdapter.config(
-  basePath = Paths.get("./data")
-)
-```
-
-### Storage Targets & Lifecycle Operations
-
-`StorageTarget` lets you choose between `FileSystem`, `MemoryMapped`, `InMemory`, `Sqlite` (requires `zio-eclipsestore-storage-sqlite`), or provide a custom foundation. Lifecycle hooks are exposed as strongly typed commands:
-
-```scala
-import java.nio.file.Paths
-import io.github.riccardomerolla.zio.eclipsestore.service.{EclipseStoreService, LifecycleCommand}
-
-for
-  _ <- EclipseStoreService.maintenance(LifecycleCommand.Checkpoint)
-  _ <- EclipseStoreService.maintenance(LifecycleCommand.Backup(Paths.get("/data/backup")))
-  status <- EclipseStoreService.status
-yield status
-```
-
-### BackendConfig and NativeLocal
-
-`BackendConfig` is the layer-facing backend selector. It covers the EclipseStore-backed targets and `NativeLocal`, which is a schema-driven whole-root snapshot engine for single-process local-first workloads.
-
-```scala
-import java.nio.file.Paths
-
-import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, NativeLocalSerde }
-import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
-import io.github.riccardomerolla.zio.eclipsestore.service.StorageBackend
-
-val jsonBackend =
-  BackendConfig.NativeLocal(Paths.get("./data/root.snapshot.json"))
-
-val protobufBackend =
-  BackendConfig.NativeLocal(
-    Paths.get("./data/root.snapshot.pb"),
-    NativeLocalSerde.Protobuf,
-  )
-
-val services =
-  ZLayer.succeed(protobufBackend) >>>
-    StorageBackend.rootServices(MyRoot.descriptor)
-```
-
-With HOCON, set `eclipsestore.backend.nativeLocal.serde = "protobuf"` to switch the snapshot encoding from JSON to protobuf.
-
-For configuration loading and lifecycle semantics, see [`docs/native-local-guide.md`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
-
-#### Backup targets
-
-Configure external backup targets via `BackupTarget`:
-
-```scala
-import io.github.riccardomerolla.zio.eclipsestore.config.BackupTarget
-
-val config = EclipseStoreConfig(
-  storageTarget = StorageTarget.FileSystem(Paths.get("/data/mystore")),
-  backupTarget = Some(
-    BackupTarget.S3Backup(
-      accessKeyId = "key",
-      secretAccessKey = "secret",
-      region = "us-east-1",
-    )
-  ),
-  backupDirectory = Some(Paths.get("/data/backup")), // embedded backup dir
-)
-```
-
-Built-ins: `SqliteBackup`, generic `SqlBackup` (e.g., postgres/mysql), `S3Backup`, `FtpBackup`.
-
-### Query API
-
-Execute type-safe queries:
-
-```scala
-import io.github.riccardomerolla.zio.eclipsestore.domain.{Query, RootDescriptor}
-
-val queries = List(
-  Query.Get[String, String]("key1"),
-  Query.Get[String, String]("key2"),
-  Query.GetAllValues[String]()
-)
-
-// Execute with automatic batching and parallel execution
-EclipseStoreService.executeMany(queries)
-
-// Run a custom query against the root context
-val countUsers = Query.Custom[Int](
-  operation = "count-users",
-  run = ctx => ctx.container.ensure(RootDescriptor.concurrentMap[Any, Any]("kv-root")).size()
-)
-EclipseStoreService.execute(countUsers)
-```
-
-### Performance Tuning
-
-Configure channels, caches, compression, off-heap page store, and encryption:
-
-```scala
-val perf = StoragePerformanceConfig(
-  channelCount = 8,
-  pageCacheSizeBytes = Some(512L * 1024 * 1024),
-  useOffHeapPageStore = true,
-  compression = CompressionSetting.LZ4,
-  encryptionKey = Some("secret-key".getBytes("UTF-8")),
-)
-
-val config = EclipseStoreConfig(
-  storageTarget = StorageTarget.FileSystem(Paths.get("/data/mystore")),
-  performance = perf,
-)
-```
-
-### Custom Type Handlers & Blobs
-
-Register custom binary handlers for domain classes or blobs:
-
-```scala
-import org.eclipse.serializer.persistence.binary.types.{ Binary, BinaryTypeHandler }
-
-final class Employee(var id: String, var salary: Double)
-
-val employeeHandler: BinaryTypeHandler[Employee] =
-  Binary.TypeHandler(
-    classOf[Employee],
-    Binary.Field_long("id", _.id.toLong, (e, v) => e.id = v.toString),
-    Binary.Field_double("salary", _.salary, (e, v) => e.salary = v),
-  )
-
-val config = EclipseStoreConfig(
-  storageTarget = StorageTarget.FileSystem(Paths.get("./data")),
-  customTypeHandlers = Chunk(employeeHandler),
-)
-```
-
-See `CustomTypeHandlerSpec` for blob/image handling.
-
-### Lazy Loading & Eager Storing
-
-- Lazy references/collections examples: see `LazyLoadingSpec`.
-- Eager storing example: Java `@StoreEager` annotation plus `EagerStoringExample`.
-
-### Import/Export
-
-Use `LifecycleCommand.Backup`, `exportData`, and `importData` helpers to move data between targets or directories.
-
-## Development Workflow
-
-- Keep all side effects inside `ZIO.*` constructors
-- Model errors with sealed ADTs (`enum EclipseStoreError`)
-- Inject dependencies with `ZLayer` and access them via `ZIO.serviceWithZIO`
-- Validate behavior via `zio-test` and the default `ZTestFramework`
-
-### Building
+## What You Get
+
+- Typed API for key-value operations, roots, lifecycle commands, and query execution
+- Schema integration via `RootDescriptor.fromSchema` and `TypedStore`
+- Streaming read/write primitives (`ZStream`-friendly)
+- Production knobs: performance tuning, custom handlers, backup targets, import/export
+- NativeLocal mode for whole-root local-first snapshots
+
+## Documentation Map
+
+Start here:
+- [docs/getting-started.md](docs/getting-started.md)
+- [docs/usage-recipes.md](docs/usage-recipes.md)
+- [docs/gigamap-and-vector-search.md](docs/gigamap-and-vector-search.md)
+
+Deep dives:
+- [docs/native-local-guide.md](docs/native-local-guide.md)
+- [docs/schema-serializer.md](docs/schema-serializer.md)
+- [docs/scala-native-engine-contract.md](docs/scala-native-engine-contract.md)
+- [docs/scala-native-engine-samples.md](docs/scala-native-engine-samples.md)
+
+## Run
 
 ```bash
 sbt compile
-```
-
-### Testing
-
-```bash
 sbt test
 ```
 
-### Running the Example
+Examples:
 
 ```bash
-sbt "runMain io.github.riccardomerolla.zio.eclipsestore.app.EclipseStoreApp"
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.gettingstarted.GettingStartedApp"
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalApp"
+sbt bookstore/run
+sbt gigamap/test
 ```
 
-## Key Concepts
+## Compatibility
 
-### Query Batching
-
-Queries marked as `batchable` are executed sequentially in an optimized manner, while non-batchable queries execute in parallel:
-
-```scala
-// These queries will be batched together
-val batch = List(
-  Query.Get[String, String]("key1"),
-  Query.Get[String, String]("key2"),
-  Query.Put("key3", "value3")
-)
-
-// This query will execute in parallel with others like it
-val nonBatch = Query.GetAllValues[String]()
-```
-
-### Resource Management
-
-The service uses ZIO's `Scope` for automatic resource cleanup, health monitoring, and optional auto-checkpoints:
-
-```scala
-val live: ZLayer[EclipseStoreConfig, EclipseStoreError, EclipseStoreService] =
-  ZLayer.scoped {
-    // Resources are acquired...
-    // Finalizers ensure cleanup on shutdown
-  }
-```
+| Module line | EclipseStore | Scala | ZIO |
+| --- | --- | --- | --- |
+| 2.x | 4.x | 3.5+ | 2.1+ |
 
 ## Contributing
 
-Contributions are welcome! Please:
-1. Respect the coding guidelines in `AGENTS.md`
-2. Add or update tests for every change
-3. Document noteworthy behavior in `README.md` and `CHANGELOG.md`
-4. Run `sbt test` before opening a PR
+- Follow project guidelines in [AGENTS.md](AGENTS.md)
+- Add/update tests for behavior changes
+- Keep docs in sync when APIs change
 
 ## License
 
-MIT License – see [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE).

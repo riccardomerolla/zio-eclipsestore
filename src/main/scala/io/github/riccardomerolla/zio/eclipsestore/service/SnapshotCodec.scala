@@ -5,8 +5,9 @@ import java.nio.file.{ Files, Path, StandardCopyOption, StandardOpenOption }
 
 import zio.*
 import zio.schema.Schema
-import zio.schema.codec.JsonCodec
+import zio.schema.codec.{ BinaryCodec, JsonCodec, ProtobufCodec }
 
+import io.github.riccardomerolla.zio.eclipsestore.config.NativeLocalSerde
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 
 /** Schema-driven whole-root snapshot codec used by the NativeLocal backend. */
@@ -40,6 +41,14 @@ final case class JsonSnapshotCodec[A: Schema]() extends SnapshotCodec[A]:
 object SnapshotCodec:
   def json[A: Schema]: SnapshotCodec[A] =
     JsonSnapshotCodec[A]()
+
+  def protobuf[A: Schema]: SnapshotCodec[A] =
+    ProtobufSnapshotCodec[A]()
+
+  def forSerde[A: Schema](serde: NativeLocalSerde): SnapshotCodec[A] =
+    serde match
+      case NativeLocalSerde.Json     => json[A]
+      case NativeLocalSerde.Protobuf => protobuf[A]
 
   def save[A](path: Path, value: A)(using codec: SnapshotCodec[A]): IO[EclipseStoreError, Unit] =
     for
@@ -87,4 +96,22 @@ object SnapshotCodec:
       .unit
       .mapError(cause =>
         EclipseStoreError.StorageError(s"Failed to copy NativeLocal snapshot from $source to $target", Some(cause))
+      )
+
+final case class ProtobufSnapshotCodec[A: Schema]() extends SnapshotCodec[A]:
+  private val codec: BinaryCodec[A] = ProtobufCodec.protobufCodec(summon[Schema[A]])
+
+  override def encode(value: A): IO[EclipseStoreError, Chunk[Byte]] =
+    ZIO
+      .attempt(codec.encode(value))
+      .mapError(cause => EclipseStoreError.StorageError("Failed to encode NativeLocal protobuf snapshot", Some(cause)))
+
+  override def decode(bytes: Chunk[Byte]): IO[EclipseStoreError, A] =
+    ZIO
+      .fromEither(codec.decode(bytes))
+      .mapError(error =>
+        EclipseStoreError.IncompatibleSchemaError(
+          s"Failed to decode NativeLocal protobuf snapshot payload: $error",
+          None,
+        )
       )

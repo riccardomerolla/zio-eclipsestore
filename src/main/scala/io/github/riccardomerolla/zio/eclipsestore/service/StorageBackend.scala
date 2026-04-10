@@ -53,7 +53,7 @@ object StorageBackend:
         config       <- ZIO.service[BackendConfig]
         selectedLayer = config match
                           case nativeLocal: BackendConfig.NativeLocal =>
-                            NativeLocal.live(nativeLocal.snapshotPath, descriptor)
+                            NativeLocal.live(nativeLocal.snapshotPath, descriptor, nativeLocal.serde)
                           case other                                  =>
                             ZLayer.succeed(other) >>> service(
                               configure

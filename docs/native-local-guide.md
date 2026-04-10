@@ -20,11 +20,14 @@ import java.nio.file.Paths
 
 import zio.*
 
-import io.github.riccardomerolla.zio.eclipsestore.config.BackendConfig
+import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, NativeLocalSerde }
 import io.github.riccardomerolla.zio.eclipsestore.service.StorageBackend
 
 val backend =
-  BackendConfig.NativeLocal(Paths.get("./data/app.snapshot.json"))
+  BackendConfig.NativeLocal(
+    Paths.get("./data/app.snapshot.pb"),
+    NativeLocalSerde.Protobuf,
+  )
 
 val services =
   ZLayer.succeed(backend) >>>
@@ -32,6 +35,11 @@ val services =
 ```
 
 The root type must have a `Schema[Root]`, and the root descriptor defines initialization and migration behavior.
+
+`NativeLocal` supports two snapshot codecs:
+
+- `NativeLocalSerde.Json` for text snapshots
+- `NativeLocalSerde.Protobuf` for binary protobuf snapshots
 
 Relevant implementation points:
 
@@ -61,13 +69,14 @@ Example config:
 eclipsestore {
   backend {
     nativeLocal {
-      snapshotPath = "./data/app.snapshot.json"
+      snapshotPath = "./data/app.snapshot.pb"
+      serde = "protobuf"
     }
   }
 }
 ```
 
-`EclipseStoreConfigZIO.backendFromResourcePath(...)` supports the same shape. If both `backend` and legacy `storageTarget` are present, `backend` wins.
+`EclipseStoreConfigZIO.backendFromResourcePath(...)` supports the same shape. If both `backend` and legacy `storageTarget` are present, `backend` wins. Accepted serde values are `json`, `proto`, and `protobuf`.
 
 ## Snapshot Semantics
 
@@ -109,22 +118,24 @@ Examples:
 
 ## Example
 
-The smallest runnable example is the todo app:
+The smallest runnable examples are the todo apps:
 
 - [`TodoNativeLocalApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalApp.scala)
+- [`TodoNativeLocalProtobufApp.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalApp.scala)
 - [`TodoNativeLocalAppSpec.scala`](../src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/nativelocal/TodoNativeLocalAppSpec.scala)
 
 Run it with:
 
 ```bash
 sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalApp"
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalProtobufApp"
 ```
 
-That sample demonstrates:
+Those samples demonstrate:
 
 - immutable root updates via `ObjectStore.modify`
 - explicit `checkpoint` plus `restart`
-- a single snapshot file on disk
+- JSON or protobuf snapshot files on disk
 - backend selection through `BackendConfig.NativeLocal`
 
 ## Choosing NativeLocal

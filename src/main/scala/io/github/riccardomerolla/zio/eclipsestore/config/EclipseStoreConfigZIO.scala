@@ -10,7 +10,7 @@ import com.typesafe.config.{ Config as HoconConfig, ConfigFactory }
 
 object EclipseStoreConfigZIO:
 
-  final private case class NativeLocalInput(snapshotPath: Path)
+  final private case class NativeLocalInput(snapshotPath: Path, serde: Option[String])
 
   final private case class FileSystemInput(path: Path)
 
@@ -132,7 +132,13 @@ object EclipseStoreConfigZIO:
 
     if hocon.hasPath(s"$backendBase.nativeLocal.snapshotPath") then
       configInput.backend.flatMap(_.nativeLocal) match
-        case Some(nativeLocal) => BackendConfig.NativeLocal(nativeLocal.snapshotPath)
+        case Some(nativeLocal) =>
+          BackendConfig.NativeLocal(
+            nativeLocal.snapshotPath,
+            nativeLocal.serde
+              .map(resolveNativeLocalSerde)
+              .getOrElse(NativeLocalSerde.Json),
+          )
         case None              => defaultBackendConfig
     else if hocon.hasPath(s"$backendBase.fileSystem.path") then
       configInput.backend.flatMap(_.fileSystem) match
@@ -164,6 +170,10 @@ object EclipseStoreConfigZIO:
       BackendConfig
         .fromStorageTarget(resolveStorageTarget(hocon))
         .getOrElse(defaultBackendConfig)
+
+  private def resolveNativeLocalSerde(value: String): NativeLocalSerde =
+    if value.equalsIgnoreCase("protobuf") || value.equalsIgnoreCase("proto") then NativeLocalSerde.Protobuf
+    else NativeLocalSerde.Json
 
   private def loadConfig(provider: zio.ConfigProvider, hocon: HoconConfig)
     : ZIO[Any, zio.Config.Error, EclipseStoreConfig] =

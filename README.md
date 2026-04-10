@@ -275,6 +275,12 @@ sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.Tod
 
 It uses a schema-derived immutable root, stores all state in one snapshot file, and demonstrates `ObjectStore.modify` plus explicit `checkpoint` and `restart`.
 
+If you want protobuf snapshots instead of JSON, run the protobuf variant:
+
+```bash
+sbt "runMain io.github.riccardomerolla.zio.eclipsestore.examples.nativelocal.TodoNativeLocalProtobufApp"
+```
+
 For setup, HOCON loading, and snapshot semantics, see [`docs/native-local-guide.md`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
 
 For tests, the NativeLocal testkit also exposes scoped temp layers through [`NativeLocalObjectStore.scala`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/testkit/NativeLocalObjectStore.scala), including an STM-enabled variant.
@@ -518,16 +524,25 @@ yield status
 ```scala
 import java.nio.file.Paths
 
-import io.github.riccardomerolla.zio.eclipsestore.config.BackendConfig
+import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, NativeLocalSerde }
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.service.StorageBackend
 
-val backend = BackendConfig.NativeLocal(Paths.get("./data/root.snapshot.json"))
+val jsonBackend =
+  BackendConfig.NativeLocal(Paths.get("./data/root.snapshot.json"))
+
+val protobufBackend =
+  BackendConfig.NativeLocal(
+    Paths.get("./data/root.snapshot.pb"),
+    NativeLocalSerde.Protobuf,
+  )
 
 val services =
-  ZLayer.succeed(backend) >>>
+  ZLayer.succeed(protobufBackend) >>>
     StorageBackend.rootServices(MyRoot.descriptor)
 ```
+
+With HOCON, set `eclipsestore.backend.nativeLocal.serde = "protobuf"` to switch the snapshot encoding from JSON to protobuf.
 
 For configuration loading and lifecycle semantics, see [`docs/native-local-guide.md`](/Users/riccardo/git/github/riccardomerolla/zio-eclipsestore/docs/native-local-guide.md).
 

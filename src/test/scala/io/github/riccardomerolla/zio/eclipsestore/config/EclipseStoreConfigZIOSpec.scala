@@ -69,4 +69,27 @@ object EclipseStoreConfigZIOSpec extends ZIOSpecDefault:
           config = env.get[BackendConfig]
         yield assertTrue(config == BackendConfig.NativeLocal(Path.of("/tmp/zio-eclipsestore-native-local.snapshot")))
       },
+      test("loads NativeLocal protobuf serde from backend config") {
+        val fileContents =
+          """eclipsestore {
+            |  backend {
+            |    nativeLocal {
+            |      snapshotPath = "/tmp/zio-eclipsestore-native-local.snapshot.pb"
+            |      serde = "protobuf"
+            |    }
+            |  }
+            |}
+            |""".stripMargin
+
+        for
+          path  <- tempConfigFile(fileContents)
+          env   <- EclipseStoreConfigZIO.backendFromFile(path).build
+          config = env.get[BackendConfig]
+        yield assertTrue(
+          config == BackendConfig.NativeLocal(
+            Path.of("/tmp/zio-eclipsestore-native-local.snapshot.pb"),
+            NativeLocalSerde.Protobuf,
+          )
+        )
+      },
     )

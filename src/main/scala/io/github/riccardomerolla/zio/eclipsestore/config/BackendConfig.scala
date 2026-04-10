@@ -54,7 +54,8 @@ sealed trait BackendConfig:
         else Left(EclipseStoreError.BackendError("Redis backend wiring is not implemented yet", None))
 
 object BackendConfig:
-  final case class NativeLocal(snapshotPath: Path) extends BackendConfig:
+  final case class NativeLocal(snapshotPath: Path, serde: NativeLocalSerde = NativeLocalSerde.Json)
+    extends BackendConfig:
     override val name: String = "native-local"
 
   final case class FileSystem(path: Path) extends BackendConfig:

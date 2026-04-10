@@ -44,11 +44,17 @@ val nativeLocalLayer =
 
 ## NativeLocal Todo
 
-The todo sample is the smallest end-to-end example of the NativeLocal backend. It uses an immutable schema-derived root, `ObjectStore.modify`, and `StorageOps.restart` against a single snapshot file.
+The todo sample is the smallest end-to-end example of the NativeLocal backend. It uses an immutable schema-derived root, `ObjectStore.modify`, and `StorageOps.restart` against a single snapshot file. There are JSON and protobuf variants.
 
 ```scala
-val layer =
+val jsonLayer =
   TodoService.layer(Paths.get("todo-native-local.snapshot.json"))
+
+val protobufLayer =
+  TodoService.layer(
+    Paths.get("todo-native-local.snapshot.pb"),
+    NativeLocalSerde.Protobuf,
+  )
 
 val program =
   for
@@ -62,6 +68,7 @@ val program =
 The sample demonstrates:
 
 - `BackendConfig.NativeLocal` as the layer-facing backend selector
+- optional protobuf snapshots through `NativeLocalSerde.Protobuf`
 - immutable whole-root updates through `ObjectStore.modify`
 - explicit persistence via `StorageOps.checkpoint` and `StorageOps.restart`
 - a single-file local-first workflow suitable for small applications

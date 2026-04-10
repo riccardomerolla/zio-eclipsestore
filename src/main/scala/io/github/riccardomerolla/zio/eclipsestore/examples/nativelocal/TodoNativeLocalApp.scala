@@ -6,7 +6,7 @@ import java.util.UUID
 import zio.*
 import zio.schema.{ DeriveSchema, Schema }
 
-import io.github.riccardomerolla.zio.eclipsestore.config.BackendConfig
+import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, NativeLocalSerde }
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.{ ObjectStore, StorageBackend, StorageOps }
@@ -86,9 +86,12 @@ object TodoService:
   val checkpointAndReload: ZIO[TodoService, EclipseStoreError, Chunk[TodoItem]] =
     ZIO.serviceWithZIO[TodoService](_.checkpointAndReload)
 
-  def layer(snapshotPath: Path): ZLayer[Any, EclipseStoreError, TodoService] =
+  def layer(
+    snapshotPath: Path,
+    serde: NativeLocalSerde = NativeLocalSerde.Json,
+  ): ZLayer[Any, EclipseStoreError, TodoService] =
     ZLayer.make[TodoService](
-      ZLayer.succeed(BackendConfig.NativeLocal(snapshotPath)),
+      ZLayer.succeed(BackendConfig.NativeLocal(snapshotPath, serde)),
       StorageBackend.rootServices(TodoRoot.descriptor),
       ZLayer.fromFunction(TodoServiceLive.apply),
     )
@@ -112,4 +115,28 @@ object TodoNativeLocalApp extends ZIOAppDefault:
 
     program
       .provide(TodoService.layer(snapshotPath))
+      .catchAll(error => ZIO.logError(error.toString))
+
+object TodoNativeLocalProtobufApp extends ZIOAppDefault:
+  private val snapshotPath = Paths.get("todo-native-local.snapshot.pb")
+
+  override def run: URIO[ZIOAppArgs & Scope, Any] =
+    val program =
+      for
+        first    <- TodoService.add("write protobuf snapshot guide")
+        second   <- TodoService.add("verify protobuf restart semantics")
+        _        <- TodoService.complete(first.id)
+        reloaded <- TodoService.checkpointAndReload
+        _        <- ZIO.logInfo(
+                      s"Reloaded protobuf todos: ${reloaded.map(todo => s"${todo.title}:${todo.completed}").mkString(", ")}"
+                    )
+        _        <- ZIO.logInfo(s"Snapshot file: $snapshotPath")
+        _        <-
+          ZIO.logDebug(
+            s"Second protobuf todo still pending: ${reloaded.exists(todo => todo.id == second.id && !todo.completed)}"
+          )
+      yield ()
+
+    program
+      .provide(TodoService.layer(snapshotPath, NativeLocalSerde.Protobuf))
       .catchAll(error => ZIO.logError(error.toString))

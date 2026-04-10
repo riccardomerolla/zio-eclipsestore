@@ -7,7 +7,7 @@ import zio.*
 import zio.schema.{ DeriveSchema, Schema }
 import zio.test.*
 
-import io.github.riccardomerolla.zio.eclipsestore.config.BackendConfig
+import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, NativeLocalSerde }
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.{
@@ -125,6 +125,24 @@ object StorageBackendSpec extends ZIOSpecDefault:
           yield assertTrue(out == NativeCounter(1), exists)
         }
       },
+      test("NativeLocal protobuf backend config wires the shared root services") {
+        ZIO.scoped {
+          for
+            snapshotPath <- ZIO.attemptBlocking(Files.createTempFile("storage-backend-native-local-protobuf", ".pb"))
+            _            <- ZIO.attemptBlocking(Files.deleteIfExists(snapshotPath)).ignore
+            _            <- ZIO.addFinalizer(ZIO.attemptBlocking(Files.deleteIfExists(snapshotPath)).ignore)
+            layer         = ZLayer.succeed(BackendConfig.NativeLocal(snapshotPath, NativeLocalSerde.Protobuf)) >>>
+                              StorageBackend.rootServices(nativeCounterDescriptor)
+            _            <- (for
+                              _ <- ObjectStore.replace(NativeCounter(7))
+                              _ <- StorageOps.checkpoint[NativeCounter]
+                            yield ()).provideLayer(layer)
+            out          <- ObjectStore.load[NativeCounter].provideLayer(layer)
+            exists       <- ZIO.attemptBlocking(Files.exists(snapshotPath))
+            size         <- ZIO.attemptBlocking(Files.size(snapshotPath))
+          yield assertTrue(out == NativeCounter(7), exists, size > 0L)
+        }
+      },
       test("NativeLocal startup fails with a typed schema error when the snapshot is corrupt") {
         ZIO.scoped {
           for
@@ -137,6 +155,22 @@ object StorageBackendSpec extends ZIOSpecDefault:
           yield built match
             case Left(EclipseStoreError.IncompatibleSchemaError(message, _)) =>
               assertTrue(message.contains("Failed to decode NativeLocal snapshot payload"))
+            case other                                                       =>
+              assertTrue(other.isLeft)
+        }
+      },
+      test("NativeLocal protobuf startup fails with a typed schema error when the snapshot is corrupt") {
+        ZIO.scoped {
+          for
+            snapshotPath <- ZIO.attemptBlocking(Files.createTempFile("storage-backend-native-protobuf-corrupt", ".pb"))
+            _            <- ZIO.addFinalizer(ZIO.attemptBlocking(Files.deleteIfExists(snapshotPath)).ignore)
+            _            <- ZIO.attemptBlocking(Files.write(snapshotPath, Array[Byte](1, 2, 3, 4, 5)))
+            layer         = ZLayer.succeed(BackendConfig.NativeLocal(snapshotPath, NativeLocalSerde.Protobuf)) >>>
+                              StorageBackend.rootServices(nativeCounterDescriptor)
+            built        <- layer.build.either
+          yield built match
+            case Left(EclipseStoreError.IncompatibleSchemaError(message, _)) =>
+              assertTrue(message.contains("Failed to decode NativeLocal protobuf snapshot payload"))
             case other                                                       =>
               assertTrue(other.isLeft)
         }

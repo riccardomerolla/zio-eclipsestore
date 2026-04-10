@@ -6,6 +6,7 @@ import zio.*
 import zio.schema.Schema
 import zio.stm.TRef
 
+import io.github.riccardomerolla.zio.eclipsestore.config.NativeLocalSerde
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 
@@ -175,8 +176,9 @@ object NativeLocal:
   private def allServices[Root: Tag: Schema](
     snapshotPath: Path,
     descriptor: RootDescriptor[Root],
+    serde: NativeLocalSerde,
   ): ZLayer[Any, EclipseStoreError, ObjectStore[Root] & StorageOps[Root] & NativeLocalSTM[Root]] =
-    given SnapshotCodec[Root] = SnapshotCodec.json[Root]
+    given SnapshotCodec[Root] = SnapshotCodec.forSerde[Root](serde)
 
     ZLayer.scopedEnvironment {
       for
@@ -212,9 +214,10 @@ object NativeLocal:
   def live[Root: Tag: Schema](
     snapshotPath: Path,
     descriptor: RootDescriptor[Root],
+    serde: NativeLocalSerde = NativeLocalSerde.Json,
   ): ZLayer[Any, EclipseStoreError, ObjectStore[Root] & StorageOps[Root]] =
     ZLayer.scopedEnvironment {
-      allServices(snapshotPath, descriptor).build.map { env =>
+      allServices(snapshotPath, descriptor, serde).build.map { env =>
         ZEnvironment[ObjectStore[Root], StorageOps[Root]](
           env.get[ObjectStore[Root]],
           env.get[StorageOps[Root]],
@@ -225,15 +228,17 @@ object NativeLocal:
   def liveWithSTM[Root: Tag: Schema](
     snapshotPath: Path,
     descriptor: RootDescriptor[Root],
+    serde: NativeLocalSerde = NativeLocalSerde.Json,
   ): ZLayer[Any, EclipseStoreError, ObjectStore[Root] & StorageOps[Root] & NativeLocalSTM[Root]] =
-    allServices(snapshotPath, descriptor)
+    allServices(snapshotPath, descriptor, serde)
 
   def stm[Root: Tag: Schema](
     snapshotPath: Path,
     descriptor: RootDescriptor[Root],
+    serde: NativeLocalSerde = NativeLocalSerde.Json,
   ): ZLayer[Any, EclipseStoreError, NativeLocalSTM[Root]] =
     ZLayer.scopedEnvironment {
-      allServices(snapshotPath, descriptor).build.map { env =>
+      allServices(snapshotPath, descriptor, serde).build.map { env =>
         ZEnvironment[NativeLocalSTM[Root]](env.get[NativeLocalSTM[Root]])
       }
     }

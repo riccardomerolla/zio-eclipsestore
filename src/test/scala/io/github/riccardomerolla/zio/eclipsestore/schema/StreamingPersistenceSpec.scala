@@ -64,6 +64,15 @@ object StreamingPersistenceSpec extends ZIOSpecDefault:
       createdAt = Instant.ofEpochMilli(index.toLong),
     )
 
+  private def waitForCommitted(env: ZEnvironment[StreamingPersistence[StreamRoot] & TypedStore])
+    : IO[EclipseStoreError, Unit] =
+    TypedStore.fetchAll[Event].provideEnvironment(env).flatMap { values =>
+      if values.nonEmpty then ZIO.unit
+      else
+        Live.live(ZIO.sleep(10.millis)) *>
+          waitForCommitted(env)
+    }
+
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("StreamingPersistence")(
       test("large ingestion completes with batching and reaches eventual consistency") {
@@ -127,7 +136,9 @@ object StreamingPersistenceSpec extends ZIOSpecDefault:
                          )
                          .provideEnvironment(env)
                          .fork
-                     _      <- Live.live(ZIO.sleep(150.millis))
+                     _      <- waitForCommitted(env).timeoutFail(
+                                 EclipseStoreError.QueryError("Timed out waiting for committed streaming records", None)
+                               )(1.second)
                      _      <- fiber.interrupt
                      values <- TypedStore.fetchAll[Event].provideEnvironment(env)
                    } yield values

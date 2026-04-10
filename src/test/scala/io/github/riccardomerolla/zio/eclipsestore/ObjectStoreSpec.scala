@@ -10,7 +10,7 @@ import zio.*
 import zio.schema.{ DeriveSchema, Schema }
 import zio.test.*
 
-import io.github.riccardomerolla.zio.eclipsestore.config.EclipseStoreConfig
+import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, NativeLocalSerde }
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.{
@@ -157,8 +157,6 @@ object ObjectStoreSpec extends ZIOSpecDefault:
       },
       test("NativeLocal serializes concurrent modify calls and preserves a consistent checkpoint") {
         ZIO.scoped {
-          given SnapshotCodec[TodoRoot] = SnapshotCodec.json[TodoRoot]
-
           for
             path <- ZIO.attemptBlocking(Files.createTempFile("native-local-concurrent", ".json"))
             _    <- ZIO.attemptBlocking(Files.deleteIfExists(path)).ignore
@@ -175,7 +173,9 @@ object ObjectStoreSpec extends ZIOSpecDefault:
                       _ <- ObjectStore.checkpoint[TodoRoot]
                       r <- ObjectStore.load[TodoRoot]
                     yield r).provideLayer(layer)
-            out  <- SnapshotCodec.load(path)
+            out  <- SnapshotCodec
+                      .loadEnvelopedOrElse(path, todoDescriptor.id, NativeLocalSerde.Json, TodoRoot(Chunk.empty))
+                      .map(_.value)
           yield assertTrue(
             live.items.size == 100,
             live.items.toSet == (1 to 100).map(i => s"task-$i").toSet,

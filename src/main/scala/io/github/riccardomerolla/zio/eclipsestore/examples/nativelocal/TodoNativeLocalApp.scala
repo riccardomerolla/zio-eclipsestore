@@ -106,7 +106,7 @@ object TodoNativeLocalApp extends ZIOAppDefault:
         second   <- TodoService.add("verify restart semantics")
         _        <- TodoService.complete(first.id)
         reloaded <- TodoService.checkpointAndReload
-        _        <- ZIO.logInfo(s"Reloaded todos: ${reloaded.map(todo => s"${todo.title}:${todo.completed}").mkString(", ")}")
+        _        <- ZIO.logInfo(s"Reloaded ${reloaded.size} todos: ${reloaded.map(todo => s"${todo.title}:${todo.completed}").mkString(", ")}")
         _        <- ZIO.logInfo(s"Snapshot file: $snapshotPath")
         _        <- ZIO.logDebug(
                       s"Second todo still pending: ${reloaded.exists(todo => todo.id == second.id && !todo.completed)}"
@@ -128,7 +128,7 @@ object TodoNativeLocalProtobufApp extends ZIOAppDefault:
         _        <- TodoService.complete(first.id)
         reloaded <- TodoService.checkpointAndReload
         _        <- ZIO.logInfo(
-                      s"Reloaded protobuf todos: ${reloaded.map(todo => s"${todo.title}:${todo.completed}").mkString(", ")}"
+                      s"Reloaded protobuf ${reloaded.size} todos: ${reloaded.map(todo => s"${todo.title}:${todo.completed}").mkString(", ")}"
                     )
         _        <- ZIO.logInfo(s"Snapshot file: $snapshotPath")
         _        <-

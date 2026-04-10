@@ -11,3 +11,5 @@ enum EclipseStoreError extends PersistenceError:
   case ConflictError(message: String, cause: Option[Throwable] = None)
   case MigrationError(message: String, cause: Option[Throwable] = None)
   case IncompatibleSchemaError(message: String, cause: Option[Throwable] = None)
+  case CorruptSnapshotError(message: String, cause: Option[Throwable] = None)
+  case PartialWriteError(message: String, cause: Option[Throwable] = None)

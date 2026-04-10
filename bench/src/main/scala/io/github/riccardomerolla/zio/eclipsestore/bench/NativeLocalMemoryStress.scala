@@ -32,6 +32,7 @@ object NativeLocalMemoryStress extends ZIOAppDefault:
           measurementSeconds = parsed.get("measurement-seconds").fold(5)(_.toInt),
           workload = StressWorkload.parse(parsed.getOrElse("workload", "mixed-80-20")),
           machine = parsed.get("machine"),
+          allowUnsafeHeap = parsed.get("allow-unsafe-heap").exists(_.equalsIgnoreCase("true")),
         )
 
       ZIO.scoped {

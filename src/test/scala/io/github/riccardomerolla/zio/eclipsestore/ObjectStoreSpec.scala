@@ -13,13 +13,7 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, NativeLocalSerde }
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.service.{
-  EclipseStoreService,
-  NativeLocal,
-  ObjectStore,
-  SnapshotCodec,
-  Transaction,
-}
+import io.github.riccardomerolla.zio.eclipsestore.service.*
 
 object ObjectStoreSpec extends ZIOSpecDefault:
 
@@ -181,6 +175,27 @@ object ObjectStoreSpec extends ZIOSpecDefault:
             live.items.toSet == (1 to 100).map(i => s"task-$i").toSet,
             out.items.size == 100,
             out.items.toSet == (1 to 100).map(i => s"task-$i").toSet,
+          )
+        }
+      },
+      test("NativeLocal inspector reports snapshot metadata after checkpoint") {
+        ZIO.scoped {
+          for
+            path   <- ZIO.attemptBlocking(Files.createTempFile("native-local-status", ".json"))
+            _      <- ZIO.attemptBlocking(Files.deleteIfExists(path)).ignore
+            _      <- ZIO.addFinalizer(ZIO.attemptBlocking(Files.deleteIfExists(path)).ignore)
+            layer   = NativeLocal.liveWithInspector(path, todoDescriptor)
+            status <- (for
+                        _      <- ObjectStore.replace(TodoRoot(Chunk("visible")))
+                        _      <- ObjectStore.checkpoint[TodoRoot]
+                        status <- NativeLocalInspector.status[TodoRoot]
+                      yield status).provideLayer(layer)
+          yield assertTrue(
+            status.snapshotPath == path,
+            status.serde == NativeLocalSerde.Json,
+            status.snapshotBytes > 0L,
+            status.lastSuccessfulCheckpointAt.nonEmpty,
+            status.lastLoadedSchemaFingerprint.nonEmpty,
           )
         }
       },

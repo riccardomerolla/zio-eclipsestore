@@ -8,6 +8,7 @@ import zio.*
 import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.NativeLocalSerde
+import io.github.riccardomerolla.zio.eclipsestore.service.{ NativeLocalSnapshotEnvelope, SnapshotCodec }
 
 object TodoNativeLocalVersioningSpec extends ZIOSpecDefault:
 
@@ -89,6 +90,9 @@ object TodoNativeLocalVersioningSpec extends ZIOSpecDefault:
                       reopened  <- TodoV2Service.checkpointAndReload
                     yield (createdV2, reopened)).provideLayer(autoV2Layer)
         plain    <- TodoV2Service.list.provideLayer(plainV2Layer)
+        envelope <- SnapshotCodec.load[NativeLocalSnapshotEnvelope](
+                      snapshotPath
+                    )(using SnapshotCodec.forSerde[NativeLocalSnapshotEnvelope](serde))
       yield {
         val createdV2 = after._1
         val reopened  = after._2
@@ -101,6 +105,9 @@ object TodoNativeLocalVersioningSpec extends ZIOSpecDefault:
           reopened.exists(todo => todo.id == createdV2.id && todo.priority == "high" && !todo.completed),
           plain.size == 3,
           plain.exists(_.id == createdV2.id),
+          envelope.schemaVersion.contains(TodoSchemaVersion.V2.ordinal),
+          envelope.migratedFromFingerprint.nonEmpty,
+          envelope.migratedAtEpochMillis.nonEmpty,
         )
       }).mapError(err => new RuntimeException(err.toString))
     }

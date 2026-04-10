@@ -92,4 +92,34 @@ object EclipseStoreConfigZIOSpec extends ZIOSpecDefault:
           )
         )
       },
+      test("loads NativeLocal startup policy from backend config") {
+        val fileContents =
+          """eclipsestore {
+            |  backend {
+            |    nativeLocal {
+            |      snapshotPath = "/tmp/zio-eclipsestore-native-local.snapshot.json"
+            |      startup {
+            |        onMissing = "require-existing"
+            |        onCorrupt = "start-empty"
+            |      }
+            |    }
+            |  }
+            |}
+            |""".stripMargin
+
+        for
+          path  <- tempConfigFile(fileContents)
+          env   <- EclipseStoreConfigZIO.backendFromFile(path).build
+          config = env.get[BackendConfig]
+        yield assertTrue(
+          config == BackendConfig.NativeLocal(
+            Path.of("/tmp/zio-eclipsestore-native-local.snapshot.json"),
+            NativeLocalSerde.Json,
+            NativeLocalStartupPolicy(
+              missingSnapshot = MissingSnapshotPolicy.RequireExistingSnapshot,
+              corruptSnapshot = CorruptSnapshotPolicy.StartFromEmpty,
+            ),
+          )
+        )
+      },
     )

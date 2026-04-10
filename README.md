@@ -62,6 +62,8 @@ NativeLocal is not a second-class demo backend. It is a deliberate implementatio
 
 The point is choice without rewriting your service layer: keep the same root model and swap backend behavior at the edge.
 
+Use classic NativeLocal when your state is whole-root oriented and small to medium. If your workload is append-heavy, retains history, or needs replay/outbox semantics, use the separate NativeLocal eventing stack instead of stretching classic NativeLocal into an event store.
+
 ## Documentation Map
 
 Start here:
@@ -110,6 +112,12 @@ Longer stress runner:
 sbt 'bench/runMain io.github.riccardomerolla.zio.eclipsestore.bench.NativeLocalMemoryStress --serde=protobuf --shape=nested --size=10000 --concurrency=8 --checkpoint-cadence=every-100 --workload=mixed-50-50'
 ```
 
+Equivalent eventing stress runner:
+
+```bash
+sbt 'bench/runMain io.github.riccardomerolla.zio.eclipsestore.bench.NativeLocalEventingStress --serde=protobuf --concurrency=8'
+```
+
 The stress runner prints:
 - ops/sec
 - p50 / p95 / p99 latency for `load`, `modify`, and `checkpoint`
@@ -120,6 +128,9 @@ The stress runner prints:
 Optional flags:
 - `--output=json` for machine-readable output
 - `--machine=<name>` or `BENCH_MACHINE=<name>` to tag local runs
+- `--allow-unsafe-heap=true` to bypass the classic NativeLocal heap guardrail for intentionally risky scenarios
+
+The classic stress runner now reports a safe-scale hint, a recommended minimum heap, and warnings when a requested scenario is likely to exceed the practical whole-root support envelope.
 
 ## Compatibility
 

@@ -7,7 +7,13 @@ import zio.*
 import zio.schema.{ DeriveSchema, Schema }
 import zio.test.*
 
-import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, NativeLocalSerde }
+import io.github.riccardomerolla.zio.eclipsestore.config.{
+  BackendConfig,
+  CorruptSnapshotPolicy,
+  MissingSnapshotPolicy,
+  NativeLocalSerde,
+  NativeLocalStartupPolicy,
+}
 import io.github.riccardomerolla.zio.eclipsestore.domain.RootDescriptor
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.{
@@ -173,6 +179,47 @@ object StorageBackendSpec extends ZIOSpecDefault:
               assertTrue(message.contains("Failed to decode NativeLocal protobuf snapshot payload"))
             case other                                                       =>
               assertTrue(other.isLeft)
+        }
+      },
+      test("NativeLocal startup policy can require an existing snapshot") {
+        ZIO.scoped {
+          for
+            snapshotPath <-
+              ZIO.attemptBlocking(Files.createTempFile("storage-backend-native-require-existing", ".json"))
+            _            <- ZIO.attemptBlocking(Files.deleteIfExists(snapshotPath)).ignore
+            layer         = ZLayer.succeed(
+                              BackendConfig.NativeLocal(
+                                snapshotPath,
+                                NativeLocalSerde.Json,
+                                NativeLocalStartupPolicy(
+                                  missingSnapshot = MissingSnapshotPolicy.RequireExistingSnapshot,
+                                  corruptSnapshot = CorruptSnapshotPolicy.Fail,
+                                ),
+                              )
+                            ) >>> StorageBackend.rootServices(nativeCounterDescriptor)
+            built        <- layer.build.either
+          yield built match
+            case Left(EclipseStoreError.InitializationError(message, _)) =>
+              assertTrue(message.contains("requires an existing snapshot"))
+            case other                                                   =>
+              assertTrue(other.isLeft)
+        }
+      },
+      test("NativeLocal startup policy can recover from a corrupt snapshot by starting from empty") {
+        ZIO.scoped {
+          for
+            snapshotPath <- ZIO.attemptBlocking(Files.createTempFile("storage-backend-native-start-empty", ".json"))
+            _            <- ZIO.addFinalizer(ZIO.attemptBlocking(Files.deleteIfExists(snapshotPath)).ignore)
+            _            <- ZIO.attemptBlocking(Files.writeString(snapshotPath, "{ broken json"))
+            layer         = ZLayer.succeed(
+                              BackendConfig.NativeLocal(
+                                snapshotPath,
+                                NativeLocalSerde.Json,
+                                NativeLocalStartupPolicy.startFromEmptyOnCorruptSnapshot,
+                              )
+                            ) >>> StorageBackend.rootServices(nativeCounterDescriptor)
+            out          <- ObjectStore.load[NativeCounter].provideLayer(layer)
+          yield assertTrue(out == NativeCounter(0))
         }
       },
     )

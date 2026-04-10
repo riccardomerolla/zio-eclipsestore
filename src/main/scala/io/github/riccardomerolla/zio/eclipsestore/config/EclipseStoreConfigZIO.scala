@@ -10,7 +10,13 @@ import com.typesafe.config.{ Config as HoconConfig, ConfigFactory }
 
 object EclipseStoreConfigZIO:
 
-  final private case class NativeLocalInput(snapshotPath: Path, serde: Option[String])
+  final private case class NativeLocalStartupInput(onMissing: Option[String], onCorrupt: Option[String])
+
+  final private case class NativeLocalInput(
+    snapshotPath: Path,
+    serde: Option[String],
+    startup: Option[NativeLocalStartupInput],
+  )
 
   final private case class FileSystemInput(path: Path)
 
@@ -138,6 +144,9 @@ object EclipseStoreConfigZIO:
             nativeLocal.serde
               .map(resolveNativeLocalSerde)
               .getOrElse(NativeLocalSerde.Json),
+            nativeLocal.startup
+              .map(resolveNativeLocalStartupPolicy)
+              .getOrElse(NativeLocalStartupPolicy.default),
           )
         case None              => defaultBackendConfig
     else if hocon.hasPath(s"$backendBase.fileSystem.path") then
@@ -174,6 +183,22 @@ object EclipseStoreConfigZIO:
   private def resolveNativeLocalSerde(value: String): NativeLocalSerde =
     if value.equalsIgnoreCase("protobuf") || value.equalsIgnoreCase("proto") then NativeLocalSerde.Protobuf
     else NativeLocalSerde.Json
+
+  private def resolveNativeLocalStartupPolicy(input: NativeLocalStartupInput): NativeLocalStartupPolicy =
+    NativeLocalStartupPolicy(
+      missingSnapshot = input.onMissing match
+        case Some(value) if value.equalsIgnoreCase("require-existing") || value.equalsIgnoreCase("require") =>
+          MissingSnapshotPolicy.RequireExistingSnapshot
+        case _                                                                                              =>
+          MissingSnapshotPolicy.InitializeFromDescriptor,
+      corruptSnapshot = input.onCorrupt match
+        case Some(value)
+             if value.equalsIgnoreCase("start-empty") || value.equalsIgnoreCase("empty") ||
+             value.equalsIgnoreCase("initialize") =>
+          CorruptSnapshotPolicy.StartFromEmpty
+        case _ =>
+          CorruptSnapshotPolicy.Fail,
+    )
 
   private def loadConfig(provider: zio.ConfigProvider, hocon: HoconConfig)
     : ZIO[Any, zio.Config.Error, EclipseStoreConfig] =

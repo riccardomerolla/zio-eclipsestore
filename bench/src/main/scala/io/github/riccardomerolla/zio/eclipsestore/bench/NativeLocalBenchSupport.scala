@@ -67,6 +67,7 @@ final case class BenchScenarioConfig(
   measurementSeconds: Int = 5,
   workload: StressWorkload = StressWorkload.Mixed8020,
   machine: Option[String] = None,
+  allowUnsafeHeap: Boolean = false,
 )
 
 final case class LatencySummary(
@@ -121,7 +122,14 @@ final case class MachineMetadata(
 final case class StressReport(
   scenario: BenchScenarioConfig,
   machine: MachineMetadata,
+  assessment: ScenarioAssessment,
   metrics: BenchMetrics,
+)
+
+final case class ScenarioAssessment(
+  safeScale: String,
+  recommendedMinHeapBytes: Long,
+  warnings: Chunk[String],
 )
 
 final case class FlatBenchItem(
@@ -372,6 +380,7 @@ object NativeLocalStressRunner:
     baseDir: Path,
   ): ZIO[Scope, RuntimeException, StressReport] =
     for
+      assessment       <- validateScenario(scenario)
       harness          <- BenchHarness.scoped(baseDir, scenario)
       _                <- harness.seed()
       heapBefore        = HeapSampler.usedBytes
@@ -409,6 +418,7 @@ object NativeLocalStressRunner:
       report            = StressReport(
                             scenario = scenario,
                             machine = machineMetadata(scenario.machine),
+                            assessment = assessment,
                             metrics = BenchMetrics(
                               totalOperations = totalOps,
                               elapsedMillis = elapsedMillis,
@@ -430,6 +440,62 @@ object NativeLocalStressRunner:
                             )
                           ).when(restartedCount < scenario.elementCount)
     yield report
+
+  private def validateScenario(scenario: BenchScenarioConfig): IO[RuntimeException, ScenarioAssessment] =
+    val assessment = assessScenario(scenario)
+    val maxHeap    = java.lang.Runtime.getRuntime.maxMemory()
+
+    if !scenario.allowUnsafeHeap && maxHeap < assessment.recommendedMinHeapBytes then
+      ZIO.fail(
+        RuntimeException(
+          s"Scenario requires more heap. Requested serde=${scenario.serde}, shape=${scenario.payloadShape}, size=${scenario.elementCount}, concurrency=${scenario.concurrency}. " +
+            s"Recommended minimum heap is ${assessment.recommendedMinHeapBytes / (1024L * 1024L)} MiB, current max heap is ${maxHeap / (1024L * 1024L)} MiB. " +
+            "Re-run with a larger `-J-Xmx` or pass --allow-unsafe-heap=true to bypass the guardrail."
+        )
+      )
+    else ZIO.succeed(assessment)
+
+  private def assessScenario(scenario: BenchScenarioConfig): ScenarioAssessment =
+    val shapeFactor =
+      scenario.payloadShape match
+        case BenchPayloadShape.Flat   => 1L
+        case BenchPayloadShape.Nested => 8L
+    val serdeFactor =
+      scenario.serde match
+        case NativeLocalSerde.Json     => 2L
+        case NativeLocalSerde.Protobuf => 4L
+    val concurrencyFactor = math.max(1, scenario.concurrency).toLong
+    val payloadFactor     = math.max(8, scenario.nestedPayloadSize).toLong
+    val scenarioWeight    = math.max(1L, scenario.elementCount.toLong) * shapeFactor * serdeFactor * payloadFactor * concurrencyFactor
+    val recommendedMiB    =
+      if scenario.payloadShape == BenchPayloadShape.Nested && scenario.serde == NativeLocalSerde.Protobuf then
+        math.max(256L, scenarioWeight / 16384L)
+      else math.max(192L, scenarioWeight / 32768L)
+    val safeScale         =
+      if scenario.payloadShape == BenchPayloadShape.Flat && scenario.elementCount <= 10000 then "good"
+      else if scenario.payloadShape == BenchPayloadShape.Flat then "moderate"
+      else if scenario.elementCount <= 1000 then "moderate"
+      else "caution"
+    val warnings          =
+      Chunk.fromIterable(
+        List(
+          Option.when(scenario.payloadShape == BenchPayloadShape.Nested && scenario.serde == NativeLocalSerde.Protobuf)(
+            "Nested protobuf snapshots have the highest peak heap usage in classic NativeLocal."
+          ),
+          Option.when(scenario.elementCount >= 100000)(
+            "100k-item runs are intended to define the upper envelope; prefer eventing if this shape is a steady-state workload."
+          ),
+          Option.when(scenario.concurrency >= 16)(
+            "High concurrency amplifies immutable root copy cost during modify/checkpoint phases."
+          ),
+        ).flatten
+      )
+
+    ScenarioAssessment(
+      safeScale = safeScale,
+      recommendedMinHeapBytes = recommendedMiB * 1024L * 1024L,
+      warnings = warnings,
+    )
 
   private def driveWorkers(
     harness: BenchHarness,
@@ -521,6 +587,9 @@ object NativeLocalStressRunner:
 
   def formatText(report: StressReport): String =
     val metrics = report.metrics
+    val warnings =
+      if report.assessment.warnings.isEmpty then "warnings=none"
+      else s"warnings=${report.assessment.warnings.mkString(" | ")}"
     s"""NativeLocal Stress Report
        |machine=${report.machine.machine}
        |jvm=${report.machine.jvmVersion}
@@ -531,8 +600,11 @@ object NativeLocalStressRunner:
        |shape=${report.scenario.payloadShape}
        |size=${report.scenario.elementCount}
        |concurrency=${report.scenario.concurrency}
+       |safeScale=${report.assessment.safeScale}
+       |recommendedMinHeapMiB=${report.assessment.recommendedMinHeapBytes / (1024L * 1024L)}
        |cadence=${report.scenario.checkpointCadence}
        |workload=${report.scenario.workload}
+       |$warnings
        |ops=${metrics.totalOperations}
        |elapsedMillis=${metrics.elapsedMillis}
        |opsPerSecond=${"%.2f".format(metrics.operationsPerSecond)}
@@ -552,6 +624,7 @@ object NativeLocalStressRunner:
 
   def formatJson(report: StressReport): String =
     val metrics = report.metrics
+    val warningsJson = report.assessment.warnings.map(value => s""""${escapeJson(value)}"""").mkString("[", ", ", "]")
     s"""{
        |  "machine": "${escapeJson(report.machine.machine)}",
        |  "jvmVersion": "${escapeJson(report.machine.jvmVersion)}",
@@ -562,6 +635,9 @@ object NativeLocalStressRunner:
        |  "shape": "${report.scenario.payloadShape.toString}",
        |  "size": ${report.scenario.elementCount},
        |  "concurrency": ${report.scenario.concurrency},
+       |  "safeScale": "${escapeJson(report.assessment.safeScale)}",
+       |  "recommendedMinHeapMiB": ${report.assessment.recommendedMinHeapBytes / (1024L * 1024L)},
+       |  "warnings": $warningsJson,
        |  "checkpointCadence": "${report.scenario.checkpointCadence.toString}",
        |  "workload": "${report.scenario.workload.toString}",
        |  "operations": ${metrics.totalOperations},

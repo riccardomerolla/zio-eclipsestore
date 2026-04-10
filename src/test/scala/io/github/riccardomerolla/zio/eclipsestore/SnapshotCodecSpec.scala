@@ -8,7 +8,11 @@ import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.config.NativeLocalSerde
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.service.SnapshotCodec
+import io.github.riccardomerolla.zio.eclipsestore.service.{
+  NativeLocalMigrationProvenance,
+  NativeLocalSnapshotEnvelope,
+  SnapshotCodec,
+}
 
 object SnapshotCodecSpec extends ZIOSpecDefault:
 
@@ -78,6 +82,47 @@ object SnapshotCodecSpec extends ZIOSpecDefault:
           yield assertTrue(loaded.value == root, loaded.rewriteRequired)).mapError(err =>
             new RuntimeException(err.toString)
           )
+        }
+      },
+      test("empty snapshot files fail with a typed corruption error") {
+        withTempFile("snapshot-empty-json", ".json") { path =>
+          (for
+            _      <- ZIO.attemptBlocking(Files.write(path, Array.emptyByteArray))
+            loaded <- SnapshotCodec.loadEnvelopedOrElse(
+                        path,
+                        "snapshot-root",
+                        NativeLocalSerde.Json,
+                        SnapshotRoot(Chunk.empty),
+                      ).either
+          yield loaded match
+            case Left(EclipseStoreError.CorruptSnapshotError(message, _)) =>
+              assertTrue(message.contains("is empty"))
+            case other                                                    =>
+              assertTrue(other.isLeft)
+          ).mapError(err => new RuntimeException(err.toString))
+        }
+      },
+      test("saveEnveloped persists migration provenance in the snapshot envelope") {
+        withTempFile("snapshot-envelope-provenance", ".json") { path =>
+          val provenance = NativeLocalMigrationProvenance("old-fingerprint", Some(1), 123456789L)
+
+          (for
+            _        <- SnapshotCodec.saveEnveloped(
+                          path,
+                          root,
+                          "snapshot-root",
+                          NativeLocalSerde.Json,
+                          schemaVersion = Some(2),
+                          provenance = Some(provenance),
+                        )
+            envelope <- SnapshotCodec.load[NativeLocalSnapshotEnvelope](
+                          path
+                        )(using SnapshotCodec.json[NativeLocalSnapshotEnvelope])
+          yield assertTrue(
+            envelope.schemaVersion.contains(2),
+            envelope.migratedFromFingerprint.contains("old-fingerprint"),
+            envelope.migratedAtEpochMillis.contains(123456789L),
+          )).mapError(err => new RuntimeException(err.toString))
         }
       },
     )

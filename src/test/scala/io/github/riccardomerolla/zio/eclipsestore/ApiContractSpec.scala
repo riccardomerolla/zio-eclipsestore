@@ -26,6 +26,7 @@ object ApiContractSpec extends ZIOSpecDefault:
     classOf[OutboxRelay[?]],
     classOf[EventSourcedRuntime[?, ?, ?, ?]],
     classOf[LocalRepo[?, ?]],
+    classOf[NativeLocalInspector[?]],
     classOf[NativeLocalSTM[?]],
     classOf[TypedStore],
   )

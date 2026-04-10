@@ -20,13 +20,14 @@ import java.nio.file.Paths
 
 import zio.*
 
-import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, NativeLocalSerde }
+import io.github.riccardomerolla.zio.eclipsestore.config.{ BackendConfig, NativeLocalSerde, NativeLocalStartupPolicy }
 import io.github.riccardomerolla.zio.eclipsestore.service.StorageBackend
 
 val backend =
   BackendConfig.NativeLocal(
     Paths.get("./data/app.snapshot.pb"),
     NativeLocalSerde.Protobuf,
+    NativeLocalStartupPolicy.startFromEmptyOnCorruptSnapshot,
   )
 
 val services =
@@ -71,12 +72,23 @@ eclipsestore {
     nativeLocal {
       snapshotPath = "./data/app.snapshot.pb"
       serde = "protobuf"
+      startup {
+        onMissing = "require-existing"
+        onCorrupt = "start-empty"
+      }
     }
   }
 }
 ```
 
 `EclipseStoreConfigZIO.backendFromResourcePath(...)` supports the same shape. If both `backend` and legacy `storageTarget` are present, `backend` wins. Accepted serde values are `json`, `proto`, and `protobuf`.
+
+Default startup behavior is conservative:
+
+- missing snapshot: initialize from `RootDescriptor.initializer()`
+- corrupt snapshot: fail startup
+
+Use `NativeLocalStartupPolicy` when you need stricter or more forgiving boot behavior.
 
 ## Snapshot Semantics
 
@@ -86,6 +98,7 @@ Current behavior:
 
 - startup: load the snapshot if present, otherwise use `RootDescriptor.initializer()`
 - decode failure: fail startup or restore with a typed `EclipseStoreError`
+- snapshot writes: write a temp file, fsync it, then atomically move it into place
 - `ObjectStore.modify`: serialize immutable whole-root updates behind a gate
 - `StorageOps.checkpoint`: write the current root to the snapshot file
 - `StorageOps.restart`: reload from the snapshot file
@@ -95,6 +108,8 @@ Current behavior:
 - `StorageOps.housekeep`: currently the same as `checkpoint`
 
 The backend is optimized for determinism and simplicity, not multi-process coordination.
+
+If you need runtime metadata, `NativeLocal.liveWithInspector(...)` exposes `NativeLocalInspector[Root]` with the snapshot path, serde, startup policy, last successful checkpoint time, last loaded schema fingerprint, and current snapshot byte size.
 
 ## Manual Versioned Snapshot Migration
 
@@ -117,9 +132,9 @@ That example models the schema version as an ADT, writes `TodoRootV1`, then upgr
 It demonstrates two upgrade modes:
 
 - manual migration through an explicit snapshot rewrite helper
-- automatic startup migration through a `NativeLocalSnapshotMigrationRegistry` entry backed by `DerivedMigrationPlan`
+- automatic startup migration through a `NativeLocalSnapshotMigrationRegistry` entry backed by `NativeLocalMigrationPlan` and `DerivedMigrationPlan`
 
-`DerivedMigrationPlan` uses `zio-schema` to derive the safe structural part of the migration and still expects explicit defaults or overrides for semantic changes such as the new `priority` field.
+`DerivedMigrationPlan` uses `zio-schema` to derive the safe structural part of the migration and still expects explicit defaults or overrides for semantic changes such as the new `priority` field. Rewritten snapshots now keep migration provenance in the envelope so later restarts retain the upgrade history.
 
 ## Optional STM Adapter
 
@@ -173,6 +188,7 @@ Use `NativeLocal` when you want:
 - a lightweight local-first store for a small app or utility
 - schema-driven persistence without EclipseStore runtime configuration
 - one-file snapshot export and restore semantics
+- explicit snapshot metadata and restart/checkpoint control
 
 If the root is an immutable `Map`, you can also layer the additive [`LocalRepo.scala`](../src/main/scala/io/github/riccardomerolla/zio/eclipsestore/service/LocalRepo.scala) helpers on top of `ObjectStore` for basic CRUD without introducing a domain-specific repository immediately.
 
@@ -181,3 +197,11 @@ Use the EclipseStore-backed targets when you need:
 - larger mutable object graphs
 - richer storage-target configuration
 - existing EclipseStore operational behavior
+
+Use NativeLocal eventing instead when you need:
+
+- append-heavy workloads
+- retained history and replay
+- optimistic concurrency by stream
+- outbox-style publication boundaries
+- larger support envelopes than whole-root checkpoints can comfortably sustain

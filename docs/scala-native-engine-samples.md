@@ -42,7 +42,7 @@ val nativeLocalLayer =
   )
 ```
 
-There is also an event-sourced NativeLocal server variant for the bookstore HTTP example. It reuses the same `BookRoutes`, but its repository persists an append-only journal plus a derived snapshot in a NativeLocal root.
+There is also an event-sourced NativeLocal server variant for the bookstore HTTP example. It reuses the same `BookRoutes`, but its repository runs on the first-class NativeLocal eventing stack: stream journal, snapshot store, optimistic expected-version checks, and policy-driven snapshotting.
 
 See:
 
@@ -86,14 +86,15 @@ For configuration loading and snapshot lifecycle details, see the [`NativeLocal 
 
 ## NativeLocal Todo Versioning
 
-The versioning sample shows the current manual migration path for incompatible NativeLocal schema changes. It writes `TodoRootV1`, migrates the saved snapshot to `TodoRootV2`, and then continues with the upgraded model on the same snapshot path.
+The versioning sample shows the current migration path for incompatible NativeLocal schema changes. It writes `TodoRootV1`, migrates the saved snapshot to `TodoRootV2`, and then continues with the upgraded model on the same snapshot path.
 
 The example demonstrates:
 
 - an explicit version ADT for the snapshot model
 - a v1-to-v2 migration that removes `legacyCategory` and adds `priority`
 - an envelope-backed snapshot that records the root id and schema fingerprint
-- automatic startup migration through `NativeLocalSnapshotMigrationRegistry`
+- automatic startup migration through `NativeLocalMigrationPlan` registration in `NativeLocalSnapshotMigrationRegistry`
+- rewritten snapshots that keep migration provenance in the envelope
 - reopening the same NativeLocal snapshot with the v2 root after migration
 - continuing to manage both migrated and newly created todos after the upgrade
 
@@ -104,15 +105,15 @@ See:
 
 ## NativeLocal Todo Event Sourcing
 
-The event-sourcing sample shows how to map a pure command handler onto NativeLocal without introducing a separate event-store backend. The root stores both a projected snapshot and an append-only journal, and the service checkpoints after each accepted command so a fresh reopen sees the same durable journal.
+The event-sourcing sample shows how to map a pure command handler onto the first-class NativeLocal eventing stack instead of storing journal state inside a classic NativeLocal root.
 
 The example demonstrates:
 
 - a pure `decide` function that returns domain events from the current projection
-- a pure `replay` function that folds journal entries back into the snapshot
-- an event-sourced root that keeps `snapshot`, `journal`, and `nextSequence` together
-- `ObjectStore.modify` as the effect boundary that atomically updates the in-memory root
-- `StorageOps.checkpoint` as the persistence step that makes accepted commands durable
+- a pure `replay` function that folds persisted event envelopes back into the current state
+- `EventStore` append semantics with stream ids and optimistic versions
+- `EventSourcedRuntime` as the effect boundary for load, decide, append, and snapshot policy
+- NativeLocal eventing persistence for journal, snapshots, and relay progress
 
 See:
 

@@ -174,32 +174,41 @@ object TodoVersioning:
       newFieldDefaults = Map("priority" -> Json.Str("normal"))
     )
 
+  val snapshotMigrationPlan: NativeLocalMigrationPlan[TodoRootV2] =
+    NativeLocalMigrationPlan.fromFunction[TodoRootV1, TodoRootV2](
+      rootId = TodoRootV1.descriptor.id,
+      sourceSchemaVersion = None,
+      targetSchemaVersion = Some(TodoSchemaVersion.V2.ordinal),
+    ) { legacy =>
+      itemV1ToV2.validate *>
+        ZIO.foreach(legacy.items)(itemV1ToV2.migrate).map(TodoRootV2.apply)
+    }
+
   val migrationRegistry: NativeLocalSnapshotMigrationRegistry[TodoRootV2] =
-    NativeLocalSnapshotMigrationRegistry.single(
-      NativeLocalSnapshotMigration.fromFunction[TodoRootV1, TodoRootV2](TodoRootV1.descriptor.id) { legacy =>
-        itemV1ToV2.validate *>
-          ZIO.foreach(legacy.items)(itemV1ToV2.migrate).map(TodoRootV2.apply)
-      }
-    )
+    NativeLocalSnapshotMigrationRegistry.single(snapshotMigrationPlan)
 
   def migrateSnapshot(
     snapshotPath: Path,
     serde: NativeLocalSerde = NativeLocalSerde.Json,
   ): IO[EclipseStoreError, TodoMigrationReport] =
     for
-      _        <- itemV1ToV2.validate
       existing <- SnapshotCodec.loadEnvelopedOrElse(
                     snapshotPath,
                     TodoRootV1.descriptor.id,
                     serde,
                     TodoRootV1(Chunk.empty),
                   )
-      migrated <- ZIO.foreach(existing.value.items)(itemV1ToV2.migrate).map(TodoRootV2.apply)
-      _        <- SnapshotCodec.saveEnveloped(snapshotPath, migrated, TodoRootV2.descriptor.id, serde)
+      migrated <- NativeLocalSnapshotMigrationTool.rewrite(
+                    snapshotPath,
+                    TodoRootV2.descriptor.id,
+                    serde,
+                    TodoRootV2(Chunk.empty),
+                    migrationRegistry,
+                  )
     yield TodoMigrationReport(
       from = TodoSchemaVersion.V1,
       to = TodoSchemaVersion.V2,
-      migratedTodos = existing.value.items.size,
+      migratedTodos = existing.value.items.size.max(migrated.value.items.size),
     )
 
 object TodoNativeLocalVersioningApp extends ZIOAppDefault:

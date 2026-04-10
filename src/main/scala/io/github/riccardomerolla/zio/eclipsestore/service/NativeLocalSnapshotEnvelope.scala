@@ -10,6 +10,8 @@ final case class NativeLocalSnapshotEnvelope(
   rootId: String,
   schemaFingerprint: String,
   schemaVersion: Option[Int],
+  migratedFromFingerprint: Option[String],
+  migratedAtEpochMillis: Option[Long],
   payload: Chunk[Byte],
 )
 
@@ -22,11 +24,14 @@ object NativeLocalSnapshotEnvelope:
     rootId: String,
     payload: Chunk[Byte],
     schemaVersion: Option[Int] = None,
+    provenance: Option[NativeLocalMigrationProvenance] = None,
   ): NativeLocalSnapshotEnvelope =
     NativeLocalSnapshotEnvelope(
       formatVersion = CurrentFormatVersion,
       rootId = rootId,
       schemaFingerprint = SchemaIntrospection.fingerprint(summon[Schema[Root]]),
       schemaVersion = schemaVersion,
+      migratedFromFingerprint = provenance.map(_.fromFingerprint),
+      migratedAtEpochMillis = provenance.map(_.migratedAtEpochMillis),
       payload = payload,
     )

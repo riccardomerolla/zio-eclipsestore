@@ -318,6 +318,14 @@ Main entry point: `io.github.riccardomerolla.zio.eclipsestore.examples.bookstore
 sbt bookstore/run
 ```
 
+Event-sourced NativeLocal variant:
+
+```bash
+sbt "bookstore/runMain io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.BookstoreEventSourcingServerApp"
+```
+
+That variant keeps an append-only bookstore journal plus a derived catalog snapshot in a NativeLocal root, while reusing the same HTTP routes and `BookRepository` interface.
+
 Default port: `8080`. Available routes:
 
 | Method & Path | Description |

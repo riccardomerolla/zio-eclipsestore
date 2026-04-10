@@ -42,6 +42,15 @@ val nativeLocalLayer =
   )
 ```
 
+There is also an event-sourced NativeLocal server variant for the bookstore HTTP example. It reuses the same `BookRoutes`, but its repository persists an append-only journal plus a derived snapshot in a NativeLocal root.
+
+See:
+
+- [`BookstoreEventSourcing.scala`](../examples/bookstore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/bookstore/domain/BookstoreEventSourcing.scala)
+- [`BookstoreEventSourcingServer.scala`](../examples/bookstore/src/main/scala/io/github/riccardomerolla/zio/eclipsestore/examples/bookstore/BookstoreEventSourcingServer.scala)
+- [`BookRepositoryEventSourcedSpec.scala`](../examples/bookstore/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/bookstore/BookRepositoryEventSourcedSpec.scala)
+- [`BookRoutesEventSourcedSpec.scala`](../examples/bookstore/src/test/scala/io/github/riccardomerolla/zio/eclipsestore/examples/bookstore/BookRoutesEventSourcedSpec.scala)
+
 ## NativeLocal Todo
 
 The todo sample is the smallest end-to-end example of the NativeLocal backend. It uses an immutable schema-derived root, `ObjectStore.modify`, and `StorageOps.restart` against a single snapshot file. There are JSON and protobuf variants.

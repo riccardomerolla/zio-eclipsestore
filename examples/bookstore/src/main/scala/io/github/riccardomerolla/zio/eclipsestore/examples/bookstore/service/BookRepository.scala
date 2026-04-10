@@ -6,7 +6,7 @@ import java.util.UUID
 
 import io.github.riccardomerolla.zio.eclipsestore.examples.bookstore.domain.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.service.{ ObjectStore, Transaction }
+import io.github.riccardomerolla.zio.eclipsestore.service.{ ObjectStore, StorageOps, Transaction }
 import scala.jdk.CollectionConverters.*
 
 enum BookRepositoryError:
@@ -89,6 +89,85 @@ final case class BookRepositoryLive(store: ObjectStore[BookstoreRoot]) extends B
   override def list: IO[BookRepositoryError, Chunk[Book]] =
     withRoot.map(root => Chunk.fromIterable(root.storage.values().asScala.toList))
 
+final case class BookRepositoryEventSourcedLive(
+  store: ObjectStore[BookstoreEventRoot],
+  ops: StorageOps[BookstoreEventRoot],
+) extends BookRepository:
+  private val DecisionPrefix = "bookstore-decision:"
+
+  private def encodeDecisionError(error: BookstoreDecisionError): EclipseStoreError =
+    error match
+      case BookstoreDecisionError.NotFound(id)      =>
+        EclipseStoreError.QueryError(s"${DecisionPrefix}not-found:${id.value}", None)
+      case BookstoreDecisionError.InvalidInput(msg) =>
+        EclipseStoreError.QueryError(s"${DecisionPrefix}invalid-input:$msg", None)
+      case BookstoreDecisionError.SnapshotDrift     =>
+        EclipseStoreError.QueryError(s"${DecisionPrefix}snapshot-drift", None)
+
+  private def decodeStoreError(error: EclipseStoreError): BookRepositoryError =
+    error match
+      case EclipseStoreError.QueryError(message, _) if message.startsWith(DecisionPrefix) =>
+        decodeDecisionMessage(message.stripPrefix(DecisionPrefix))
+      case other                                                                         =>
+        BookRepositoryError.StorageFailure(other.toString)
+
+  private def decodeDecisionMessage(message: String): BookRepositoryError =
+    if message.startsWith("not-found:") then
+      BookRepositoryError.NotFound(BookId(UUID.fromString(message.stripPrefix("not-found:"))))
+    else if message.startsWith("invalid-input:") then
+      BookRepositoryError.InvalidInput(message.stripPrefix("invalid-input:"))
+    else if message == "snapshot-drift" then
+      BookRepositoryError.StorageFailure("Stored bookstore snapshot drift detected")
+    else
+      BookRepositoryError.StorageFailure(s"Unrecognized bookstore decision failure: $message")
+
+  private def process(command: BookstoreCommand): IO[BookRepositoryError, Chunk[BookstoreEventRecord]] =
+    for
+      records <- store.modify { root =>
+                   ZIO.fromEither(BookstoreEventSourcing.runCommand(root, command)).mapError { error =>
+                     encodeDecisionError(error)
+                   }
+                 }
+                 .mapError(decodeStoreError)
+      _       <- ops.checkpoint.mapError(err => BookRepositoryError.StorageFailure(err.toString))
+    yield records
+
+  private def projection: IO[BookRepositoryError, BookstoreProjection] =
+    store.load
+      .map(_.snapshot)
+      .mapError(err => BookRepositoryError.StorageFailure(err.toString))
+
+  override def create(payload: CreateBookRequest): IO[BookRepositoryError, Book] =
+    for
+      id      <- Random.nextUUID.map(BookId.apply)
+      book     = Book(id, payload.title, payload.author, payload.price, payload.tags)
+      records <- process(BookstoreCommand.Create(book))
+      created <- ZIO
+                   .fromOption(records.collectFirst { case BookstoreEventRecord(_, BookstoreEvent.BookCreated(created)) =>
+                     created
+                   })
+                   .orElseFail(BookRepositoryError.StorageFailure("Expected BookCreated event after create command"))
+    yield created
+
+  override def update(id: BookId, payload: UpdateBookRequest): IO[BookRepositoryError, Book] =
+    for
+      records <- process(BookstoreCommand.Update(id, payload))
+      updated <- ZIO
+                   .fromOption(records.collectFirst { case BookstoreEventRecord(_, BookstoreEvent.BookUpdated(book)) =>
+                     book
+                   })
+                   .orElseFail(BookRepositoryError.StorageFailure(s"Expected BookUpdated event for ${id.value}"))
+    yield updated
+
+  override def get(id: BookId): IO[BookRepositoryError, Option[Book]] =
+    projection.map(_.find(id))
+
+  override def delete(id: BookId): IO[BookRepositoryError, Unit] =
+    process(BookstoreCommand.Delete(id)).unit
+
+  override def list: IO[BookRepositoryError, Chunk[Book]] =
+    projection.map(_.books)
+
 object BookRepository:
   def create(payload: CreateBookRequest): ZIO[BookRepository, BookRepositoryError, Book] =
     ZIO.serviceWithZIO[BookRepository](_.create(payload))
@@ -107,3 +186,6 @@ object BookRepository:
 
   val live: ZLayer[ObjectStore[BookstoreRoot], Nothing, BookRepository] =
     ZLayer.fromFunction(BookRepositoryLive.apply)
+
+  val eventSourcedLive: ZLayer[ObjectStore[BookstoreEventRoot] & StorageOps[BookstoreEventRoot], Nothing, BookRepository] =
+    ZLayer.fromFunction(BookRepositoryEventSourcedLive.apply)

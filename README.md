@@ -91,6 +91,36 @@ sbt bookstore/run
 sbt gigamap/test
 ```
 
+## Performance
+
+NativeLocal includes a local-only performance suite under the `bench` subproject.
+
+JMH entrypoints:
+
+```bash
+sbt "bench/Jmh/run .*NativeLocalStartupBenchmark.*"
+sbt "bench/Jmh/run .*NativeLocalConcurrencyBenchmark.*"
+sbt "bench/Jmh/run .*NativeLocalBulkBenchmark.*"
+sbt "bench/Jmh/run .*NativeLocalSerdeBenchmark.*"
+```
+
+Longer stress runner:
+
+```bash
+sbt 'bench/runMain io.github.riccardomerolla.zio.eclipsestore.bench.NativeLocalMemoryStress --serde=protobuf --shape=nested --size=10000 --concurrency=8 --checkpoint-cadence=every-100 --workload=mixed-50-50'
+```
+
+The stress runner prints:
+- ops/sec
+- p50 / p95 / p99 latency for `load`, `modify`, and `checkpoint`
+- restart duration
+- snapshot byte size
+- approximate heap occupancy before warmup, after warmup, after checkpoint, and after restart
+
+Optional flags:
+- `--output=json` for machine-readable output
+- `--machine=<name>` or `BENCH_MACHINE=<name>` to tag local runs
+
 ## Compatibility
 
 | Module line | EclipseStore | Scala | ZIO |
